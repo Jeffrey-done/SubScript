@@ -159,11 +159,11 @@ const SubscriptionModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialDa
                   onClick={() => setCategory(key as CategoryType)}
                   className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${
                     category === key
-                      ? `bg-${color}/20 border-${color} text-white`
+                      ? 'text-white'
                       : 'bg-background border-border text-muted hover:border-slate-400'
                   }`}
                   style={{
-                    backgroundColor: category === key ? color : undefined,
+                    backgroundColor: category === key ? `${color}33` : undefined,
                     borderColor: category === key ? color : undefined,
                     color: category === key ? '#fff' : undefined
                   }}
