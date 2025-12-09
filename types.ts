@@ -28,6 +28,13 @@ export interface SpendingStats {
   categoryBreakdown: { name: string; value: number; color: string }[];
 }
 
+export interface AIConfig {
+  appId: string;
+  apiSecret: string;
+  apiKey: string;
+  domain: string;
+}
+
 export const CATEGORIES: Record<CategoryType, { label: string; color: string }> = {
   entertainment: { label: '娱乐', color: '#8b5cf6' }, // Violet
   utilities: { label: '生活缴费', color: '#f59e0b' }, // Amber

@@ -1,7 +1,6 @@
-
 import React, { useRef, useState, useEffect } from 'react';
-import { X, Settings, Download, Upload, FileJson, Check, AlertCircle, Cloud, ExternalLink } from 'lucide-react';
-import { Subscription, Budget } from '../types';
+import { X, Settings, Download, Upload, FileJson, Check, AlertCircle, Cloud, ExternalLink, Bot, Key, Eye, EyeOff } from 'lucide-react';
+import { Subscription, Budget, AIConfig } from '../types';
 import { pantryService } from '../services/pantryService';
 
 interface Props {
@@ -13,13 +12,23 @@ interface Props {
     restDays: string[];
   };
   onRestore: (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[] }) => void;
+  aiConfig: AIConfig;
+  onUpdateAIConfig: (config: AIConfig) => void;
 }
 
-const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestore }) => {
+const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestore, aiConfig, onUpdateAIConfig }) => {
   const [status, setStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  
+  // Pantry State
   const [pantryId, setPantryId] = useState('');
   const [isCloudLoading, setIsCloudLoading] = useState(false);
   const [loadingType, setLoadingType] = useState<'upload' | 'download' | null>(null);
+  
+  // AI Config State
+  const [localAiConfig, setLocalAiConfig] = useState<AIConfig>(aiConfig);
+  const [showSecrets, setShowSecrets] = useState(false);
+
+  // File Input
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -27,6 +36,12 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
     const savedId = localStorage.getItem('pantry_id');
     if (savedId) setPantryId(savedId);
   }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+        setLocalAiConfig(aiConfig);
+    }
+  }, [isOpen, aiConfig]);
 
   const handleSavePantryId = (val: string) => {
     setPantryId(val);
@@ -62,7 +77,6 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Remove window.confirm to prevent blocking issues
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -70,12 +84,9 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
         if (json && Array.isArray(json.subscriptions)) {
           setStatus({ type: 'success', msg: `文件解析成功！准备恢复...` });
           
-          // UX Sequence: Show Success -> Close Modal -> Trigger Restore Animation
           setTimeout(() => {
             setStatus(null);
-            onClose(); // Close modal first
-            
-            // Trigger the actual data update and loading screen after modal starts closing
+            onClose();
             setTimeout(() => {
                 onRestore(json);
             }, 300);
@@ -88,7 +99,7 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
       }
     };
     reader.readAsText(file);
-    e.target.value = ''; // Reset input
+    e.target.value = '';
   };
 
   // Pantry Cloud Handlers
@@ -102,7 +113,6 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
     setLoadingType('upload');
     setStatus(null);
     try {
-      // Basic validation
       if (!currentData.subscriptions) {
         throw new Error('没有可备份的数据');
       }
@@ -124,7 +134,6 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
       return;
     }
 
-    // Removed blocking window.confirm to ensure button works on all devices immediately
     setIsCloudLoading(true);
     setLoadingType('download');
     setStatus(null);
@@ -140,12 +149,9 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
         msg: `下载成功！正在恢复 ${data.subscriptions.length} 个订阅...` 
       });
 
-      // UX Sequence: Show Success -> Close Modal -> Trigger Restore Animation
       setTimeout(() => {
         setStatus(null);
-        onClose(); // Close modal first
-        
-        // Trigger the actual data update and loading screen after modal starts closing
+        onClose();
         setTimeout(() => {
             onRestore(data);
         }, 300);
@@ -160,6 +166,12 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
     }
   };
 
+  const handleSaveAIConfig = () => {
+      onUpdateAIConfig(localAiConfig);
+      setStatus({ type: 'success', msg: 'AI 配置已保存' });
+      setTimeout(() => setStatus(null), 2000);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -168,7 +180,7 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
         <div className="flex justify-between items-center p-5 border-b border-border bg-background/50 sticky top-0 backdrop-blur-md z-10 shrink-0">
           <div className="flex items-center gap-2 text-main">
             <Settings className="w-5 h-5 text-primary" />
-            <h3 className="text-lg font-semibold">数据备份与恢复</h3>
+            <h3 className="text-lg font-semibold">应用设置</h3>
           </div>
           <button onClick={onClose} className="text-muted hover:text-main transition-colors">
             <X className="w-5 h-5" />
@@ -177,6 +189,80 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
 
         <div className="p-6 space-y-8 overflow-y-auto">
           
+          {/* AI Config Section */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <Bot className="w-5 h-5 text-purple-500" />
+                    <h4 className="text-sm font-bold text-main">AI 模型配置 (星火/DeepSeek)</h4>
+                </div>
+                <button 
+                    onClick={() => setShowSecrets(!showSecrets)}
+                    className="text-muted hover:text-main"
+                    title={showSecrets ? "隐藏密钥" : "显示密钥"}
+                >
+                    {showSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl space-y-3 border border-border">
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="text-xs text-muted mb-1 block">App ID</label>
+                        <input 
+                            type="text" 
+                            value={localAiConfig.appId}
+                            onChange={(e) => setLocalAiConfig({...localAiConfig, appId: e.target.value})}
+                            className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none"
+                            placeholder="1198a631"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-xs text-muted mb-1 block">Domain</label>
+                        <input 
+                            type="text" 
+                            value={localAiConfig.domain}
+                            onChange={(e) => setLocalAiConfig({...localAiConfig, domain: e.target.value})}
+                            className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none"
+                            placeholder="xdeepseekv3"
+                        />
+                    </div>
+                </div>
+
+                <div>
+                    <label className="text-xs text-muted mb-1 block">API Secret</label>
+                    <input 
+                        type={showSecrets ? "text" : "password"}
+                        value={localAiConfig.apiSecret}
+                        onChange={(e) => setLocalAiConfig({...localAiConfig, apiSecret: e.target.value})}
+                        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none font-mono"
+                        placeholder="API Secret"
+                    />
+                </div>
+
+                <div>
+                    <label className="text-xs text-muted mb-1 block">API Key</label>
+                    <input 
+                        type={showSecrets ? "text" : "password"}
+                        value={localAiConfig.apiKey}
+                        onChange={(e) => setLocalAiConfig({...localAiConfig, apiKey: e.target.value})}
+                        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none font-mono"
+                        placeholder="API Key"
+                    />
+                </div>
+
+                <button 
+                    onClick={handleSaveAIConfig}
+                    className="w-full flex items-center justify-center gap-2 bg-purple-500 hover:bg-purple-600 text-white py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-purple-500/20 mt-2"
+                >
+                    <Check className="w-4 h-4" />
+                    保存配置
+                </button>
+            </div>
+          </div>
+
+          <div className="h-px bg-border w-full"></div>
+
           {/* Pantry Cloud Section */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -204,9 +290,6 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
                   placeholder="例如: 9471f008-..."
                   className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-primary outline-none"
                 />
-                <p className="text-[10px] text-muted mt-1.5 leading-relaxed">
-                  Pantry Cloud 是一个免费的 JSON 存储服务，原生支持跨域，无需代理即可使用。
-                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-1">
@@ -285,9 +368,9 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
 
           {/* Status Bar */}
           {status && (
-              <div className={`text-xs p-3 rounded-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 ${
-                  status.type === 'error' ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300' : 
-                  'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-300'
+              <div className={`text-xs p-3 rounded-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 sticky bottom-0 shadow-lg ${
+                  status.type === 'error' ? 'bg-red-50 dark:bg-red-900/90 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-800' : 
+                  'bg-emerald-50 dark:bg-emerald-900/90 text-emerald-600 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800'
               }`}>
                   {status.type === 'error' ? <AlertCircle className="w-4 h-4 shrink-0" /> : <Check className="w-4 h-4 shrink-0" />}
                   <span className="flex-1 font-medium">{status.msg}</span>

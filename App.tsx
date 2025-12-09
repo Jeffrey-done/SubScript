@@ -1,17 +1,24 @@
-
 import React, { useState, useEffect } from 'react';
 import { Plus, LayoutDashboard, List, Wallet, Moon, Sun, Settings, AlertTriangle } from 'lucide-react';
-import { Subscription, Budget } from './types';
+import { Subscription, Budget, AIConfig } from './types';
 import Dashboard from './components/Dashboard';
 import SubscriptionList from './components/SubscriptionList';
 import SubscriptionModal from './components/SubscriptionModal';
 import SettingsModal from './components/SettingsModal';
+import AIAnalysisModal from './components/AIAnalysisModal';
 
 const DEFAULT_BUDGET: Budget = {
   monthly: 2000,
   yearly: 24000,
   baseSalary: 4500, // Default base salary
   commission: 0,    // Default commission
+};
+
+const DEFAULT_AI_CONFIG: AIConfig = {
+    appId: '1198a631',
+    apiSecret: 'ODgwZWEwZWIxMmQ2M2VmNDhiZTBiMzlk',
+    apiKey: '7fc4633e7541e7fdc26f295fd10f7b77',
+    domain: 'xdeepseekv32'
 };
 
 function App() {
@@ -34,6 +41,12 @@ function App() {
     const saved = localStorage.getItem('restDays');
     return saved ? JSON.parse(saved) : [];
   });
+  
+  // AI Configuration
+  const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
+    const saved = localStorage.getItem('aiConfig');
+    return saved ? JSON.parse(saved) : DEFAULT_AI_CONFIG;
+  });
 
   // Theme State
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -44,6 +57,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'list'>('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [editingSub, setEditingSub] = useState<Subscription | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -84,6 +98,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem('restDays', JSON.stringify(restDays));
   }, [restDays]);
+  
+  useEffect(() => {
+    localStorage.setItem('aiConfig', JSON.stringify(aiConfig));
+  }, [aiConfig]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
@@ -257,6 +275,7 @@ function App() {
                 onUpdateBudget={handleUpdateBudget}
                 restDays={restDays}
                 onToggleRestDay={handleToggleRestDay}
+                onOpenAI={() => setIsAIModalOpen(true)}
               />
             ) : (
               <div className="space-y-6">
@@ -335,6 +354,16 @@ function App() {
         onClose={() => setIsSettingsOpen(false)}
         currentData={{ subscriptions, budget, restDays }}
         onRestore={handleDataRestore}
+        aiConfig={aiConfig}
+        onUpdateAIConfig={setAiConfig}
+      />
+      
+      <AIAnalysisModal
+        isOpen={isAIModalOpen}
+        onClose={() => setIsAIModalOpen(false)}
+        subscriptions={subscriptions}
+        budget={budget}
+        aiConfig={aiConfig}
       />
 
       {/* Delete Confirmation Modal - Custom Implementation to bypass browser blocking */}

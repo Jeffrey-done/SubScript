@@ -1,9 +1,8 @@
-
 import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Subscription, CATEGORIES, Budget } from '../types';
 import { calculateStats, formatCurrency, getDaysInMonth, countSundaysInMonth } from '../utils';
-import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator, Coffee, Coins, Banknote, MousePointerClick } from 'lucide-react';
+import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator, Coffee, Coins, Bot, MousePointerClick } from 'lucide-react';
 
 interface DashboardProps {
   subscriptions: Subscription[];
@@ -11,9 +10,10 @@ interface DashboardProps {
   onUpdateBudget: (newBudget: Budget) => void;
   restDays: string[];
   onToggleRestDay: (dateStr: string) => void;
+  onOpenAI: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBudget, restDays, onToggleRestDay }) => {
+const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBudget, restDays, onToggleRestDay, onOpenAI }) => {
   const [editingTarget, setEditingTarget] = useState<'monthly' | 'yearly' | 'baseSalary' | 'commission' | null>(null);
   const [tempBudgetValue, setTempBudgetValue] = useState('');
   
@@ -258,6 +258,13 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                     <h3 className="text-lg font-semibold flex items-center gap-2 text-indigo-100">
                         <Wallet className="w-5 h-5" /> 支出总览
                     </h3>
+                    <button 
+                        onClick={onOpenAI}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-semibold backdrop-blur-sm transition-all border border-white/10"
+                    >
+                        <Bot className="w-4 h-4" />
+                        AI 智能分析
+                    </button>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
