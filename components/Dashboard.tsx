@@ -1,17 +1,20 @@
+
 import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Subscription, CATEGORIES, Budget } from '../types';
-import { calculateStats, formatCurrency } from '../utils';
-import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator } from 'lucide-react';
+import { calculateStats, formatCurrency, getDaysInMonth, countSundaysInMonth } from '../utils';
+import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator, Coffee, Coins, Banknote, MousePointerClick } from 'lucide-react';
 
 interface DashboardProps {
   subscriptions: Subscription[];
   budget: Budget;
   onUpdateBudget: (newBudget: Budget) => void;
+  restDays: string[];
+  onToggleRestDay: (dateStr: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBudget }) => {
-  const [editingTarget, setEditingTarget] = useState<'monthly' | 'yearly' | null>(null);
+const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBudget, restDays, onToggleRestDay }) => {
+  const [editingTarget, setEditingTarget] = useState<'monthly' | 'yearly' | 'baseSalary' | 'commission' | null>(null);
   const [tempBudgetValue, setTempBudgetValue] = useState('');
   
   // Calendar State
@@ -28,14 +31,71 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
   }, [subscriptions]);
 
   const sortedBreakdown = [...stats.categoryBreakdown].sort((a, b) => b.value - a.value);
-  const averageCost = subscriptions.length > 0 ? stats.monthlyTotal / subscriptions.length : 0;
+  
+  // --- Salary Calculation Logic ---
+  const salaryStats = useMemo(() => {
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    const daysInMonth = getDaysInMonth(year, month);
+    const sundaysInMonth = countSundaysInMonth(year, month);
+    
+    // Fix: Use string matching for accurate count instead of Date objects to avoid timezone issues
+    const currentMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const markedRestDaysInMonth = restDays.filter(dateStr => dateStr.startsWith(currentMonthPrefix)).length;
+
+    // Formula: 4500 - {4500 / (DaysInMonth - Sundays)} * (RestDays - Sundays)
+    const base = budget.baseSalary || 4500;
+    const commission = budget.commission || 0;
+    
+    const workableDays = daysInMonth - sundaysInMonth;
+    const dailyRate = workableDays > 0 ? base / workableDays : 0;
+    
+    // How many days "extra" rest did they take beyond Sundays?
+    const deductionDays = markedRestDaysInMonth - sundaysInMonth;
+    
+    // Logic: If deductionDays < 0 (worked extra), we cap at 4500 (deduction = 0).
+    // If deductionDays > 0 (rested extra), we deduct.
+    const effectiveDeductionDays = Math.max(0, deductionDays);
+    const deductionAmount = dailyRate * effectiveDeductionDays;
+    
+    const estimatedSalaryBeforeCommission = base - deductionAmount;
+    
+    // Total including commission
+    const totalIncome = estimatedSalaryBeforeCommission + commission;
+    
+    const disposableIncome = totalIncome - stats.monthlyTotal;
+
+    return {
+      daysInMonth,
+      sundaysInMonth,
+      markedRestDaysInMonth,
+      effectiveDeductionDays,
+      deductionAmount,
+      base,
+      commission,
+      totalIncome,
+      disposableIncome
+    };
+  }, [viewDate, restDays, budget.baseSalary, budget.commission, stats.monthlyTotal]);
+
 
   // Calendar Logic
   const calendarData = useMemo(() => {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
     const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
-    const data: Record<number, Subscription[]> = {};
+    const data: Record<number, { subs: Subscription[], isRest: boolean, dateStr: string }> = {};
+
+    // Check rest days
+    const daysInMonth = getDaysInMonth(year, month);
+    for (let d = 1; d <= daysInMonth; d++) {
+       const dateStr = new Date(year, month, d, 12).toISOString().split('T')[0]; // Use noon to avoid timezone flip issues
+       data[d] = { 
+           subs: [], 
+           isRest: restDays.includes(dateStr),
+           dateStr
+       };
+    }
 
     subscriptions.forEach(sub => {
         const start = new Date(sub.startDate);
@@ -49,16 +109,14 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
              const dateToCheck = new Date(year, month, day);
              // Ensure subscription has started
              if (dateToCheck >= start) {
-                 if (!data[day]) data[day] = [];
-                 data[day].push(sub);
+                 if (data[day]) data[day].subs.push(sub);
              }
         } else if (sub.cycle === 'yearly') {
              if (start.getMonth() === month) {
                  const day = start.getDate();
                  const dateToCheck = new Date(year, month, day);
                  if (dateToCheck >= start) {
-                     if (!data[day]) data[day] = [];
-                     data[day].push(sub);
+                     if (data[day]) data[day].subs.push(sub);
                  }
              }
         } else if (sub.cycle === 'weekly') {
@@ -69,14 +127,13 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                  const diffTime = dateToCheck.getTime() - start.getTime();
                  const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
                  if (diffDays % 7 === 0) {
-                     if (!data[d]) data[d] = [];
-                     data[d].push(sub);
+                     if (data[d]) data[d].subs.push(sub);
                  }
              }
         }
     });
     return data;
-  }, [subscriptions, viewDate]);
+  }, [subscriptions, viewDate, restDays]);
 
   const nextMonth = () => {
     setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1));
@@ -86,7 +143,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
     setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1));
   };
 
-  const startEditing = (type: 'monthly' | 'yearly', currentValue: number) => {
+  const startEditing = (type: 'monthly' | 'yearly' | 'baseSalary' | 'commission', currentValue: number) => {
     setEditingTarget(type);
     setTempBudgetValue(currentValue.toString());
   };
@@ -189,41 +246,129 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
 
   return (
     <div className="space-y-6">
-      {/* Summary Card */}
-      <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 dark:from-indigo-900 dark:to-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-         {/* Decorative background */}
-         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
-         <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl -ml-12 -mb-12 pointer-events-none"></div>
-
-         <div className="relative z-10">
-            <h3 className="text-lg font-semibold mb-6 flex items-center gap-2 text-indigo-100">
-               <Wallet className="w-5 h-5" /> 支出总览
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 divide-y md:divide-y-0 md:divide-x divide-indigo-400/30">
-               <div className="pt-4 md:pt-0">
+      
+      {/* Salary & Disposable Income Card */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 dark:from-indigo-900 dark:to-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
+             {/* Decorative background */}
+             <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
+             
+             <div className="relative z-10">
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold flex items-center gap-2 text-indigo-100">
+                        <Wallet className="w-5 h-5" /> 支出总览
+                    </h3>
+                </div>
+                
+                <div>
                   <p className="text-sm text-indigo-200 mb-1">每月总固定支出</p>
-                  <p className="text-3xl font-bold tracking-tight">{formatCurrency(stats.monthlyTotal)}</p>
-               </div>
-               <div className="pt-4 md:pt-0 md:pl-8">
-                  <p className="text-sm text-indigo-200 mb-1">年度总支出预测</p>
-                  <p className="text-3xl font-bold tracking-tight">{formatCurrency(stats.yearlyTotal)}</p>
-               </div>
-               <div className="pt-4 md:pt-0 md:pl-8">
-                  <p className="text-sm text-indigo-200 mb-1">平均单项成本</p>
-                  <div className="flex items-baseline gap-1">
-                    <p className="text-3xl font-bold tracking-tight">{formatCurrency(averageCost)}</p>
-                    <span className="text-sm text-indigo-300">/ 月</span>
-                  </div>
-               </div>
-            </div>
-         </div>
+                  <p className="text-4xl font-bold tracking-tight">{formatCurrency(stats.monthlyTotal)}</p>
+                </div>
+             </div>
+          </div>
+
+          <div className="bg-surface rounded-2xl p-6 border border-border shadow-xl relative overflow-hidden group">
+             <div className="flex justify-between items-start mb-4">
+                 <h3 className="text-lg font-semibold flex items-center gap-2 text-main">
+                    <Coins className="w-5 h-5 text-emerald-500" /> 
+                    {viewDate.getMonth() + 1}月收入计算
+                 </h3>
+                 <div className="flex gap-1">
+                    {/* Settings for Base Salary */}
+                    {editingTarget !== 'baseSalary' && editingTarget !== 'commission' && (
+                        <button 
+                            onClick={() => startEditing('baseSalary', salaryStats.base)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-muted hover:text-main"
+                            title="设置基础工资"
+                        >
+                            <Settings2 className="w-4 h-4" />
+                        </button>
+                    )}
+                 </div>
+             </div>
+
+             <div className="space-y-4">
+                 <div className="grid grid-cols-2 gap-4">
+                    {/* Left: Calculation Breakdown */}
+                    <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                             <span className="text-muted">基础工资:</span>
+                             {editingTarget === 'baseSalary' ? (
+                                <div className="flex items-center gap-1">
+                                    <input 
+                                        type="number" 
+                                        value={tempBudgetValue}
+                                        onChange={(e) => setTempBudgetValue(e.target.value)}
+                                        className="w-16 bg-background border border-slate-600 rounded px-1 py-0.5 text-xs text-main outline-none"
+                                        autoFocus
+                                    />
+                                    <button onClick={saveBudget} className="text-emerald-500"><Check className="w-3 h-3" /></button>
+                                </div>
+                             ) : (
+                                <span className="font-medium text-main">{formatCurrency(salaryStats.base)}</span>
+                             )}
+                        </div>
+                        <div className="flex justify-between">
+                             <span className="text-muted">缺勤扣款:</span>
+                             <span className={`font-medium ${salaryStats.deductionAmount > 0 ? 'text-red-500' : 'text-main'}`}>
+                                 -{formatCurrency(salaryStats.deductionAmount)}
+                             </span>
+                        </div>
+                        <div className="flex justify-between items-center group/comm">
+                             <span className="text-muted flex items-center gap-1 cursor-pointer" onClick={() => startEditing('commission', salaryStats.commission)}>
+                                提成收入 <Edit2IconMini />
+                             </span>
+                             {editingTarget === 'commission' ? (
+                                <div className="flex items-center gap-1">
+                                    <input 
+                                        type="number" 
+                                        value={tempBudgetValue}
+                                        onChange={(e) => setTempBudgetValue(e.target.value)}
+                                        className="w-16 bg-background border border-slate-600 rounded px-1 py-0.5 text-xs text-main outline-none"
+                                        autoFocus
+                                    />
+                                    <button onClick={saveBudget} className="text-emerald-500"><Check className="w-3 h-3" /></button>
+                                </div>
+                             ) : (
+                                <span className="font-medium text-emerald-500 cursor-pointer hover:underline" onClick={() => startEditing('commission', salaryStats.commission)}>
+                                    +{formatCurrency(salaryStats.commission)}
+                                </span>
+                             )}
+                        </div>
+                        <div className="pt-2 border-t border-border flex justify-between font-bold text-main">
+                             <span>实发工资:</span>
+                             <span>{formatCurrency(salaryStats.totalIncome)}</span>
+                        </div>
+                    </div>
+
+                    {/* Right: Disposable Result */}
+                    <div className="flex flex-col justify-end text-right border-l border-border pl-4">
+                        <p className="text-sm text-muted mb-1">扣除订阅后可支配</p>
+                        <p className={`text-2xl font-bold ${salaryStats.disposableIncome >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            {formatCurrency(salaryStats.disposableIncome)}
+                        </p>
+                    </div>
+                 </div>
+
+                 <div className="text-[10px] text-muted bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-border">
+                     <div className="flex flex-wrap gap-x-4 gap-y-1 mb-1.5">
+                        <span>月天数: {salaryStats.daysInMonth}</span>
+                        <span>周日: {salaryStats.sundaysInMonth}</span>
+                        <span className="text-orange-500 font-medium">本月标注休息: {salaryStats.markedRestDaysInMonth}天</span>
+                        <span>扣款计算天数: {salaryStats.effectiveDeductionDays}</span>
+                     </div>
+                     <div className="opacity-75">
+                         公式: ({salaryStats.base} - 扣款 + 提成) - 订阅支出
+                     </div>
+                 </div>
+             </div>
+          </div>
       </div>
 
-      {/* Budget & Stats Cards */}
+      {/* Budget Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {renderBudgetCard(
-            '月度预算监控', 
+            '月度订阅预算', 
             stats.monthlyTotal, 
             budget.monthly, 
             'monthly', 
@@ -232,7 +377,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
         )}
 
         {renderBudgetCard(
-            '年度预算监控', 
+            '年度订阅预算', 
             stats.yearlyTotal, 
             budget.yearly, 
             'yearly', 
@@ -321,12 +466,28 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
 
       {/* Calendar View */}
       <div className="bg-surface p-6 rounded-2xl border border-border shadow-lg transition-colors">
-        <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-main flex items-center gap-2">
-                <CalendarDays className="w-5 h-5 text-primary" />
-                订阅日历
-            </h3>
-            <div className="flex items-center gap-4 text-sm font-medium bg-background px-1 py-1 rounded-lg border border-border">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-6 gap-4">
+            <div>
+                <h3 className="text-lg font-semibold text-main flex items-center gap-2">
+                    <CalendarDays className="w-5 h-5 text-primary" />
+                    考勤与订阅日历
+                </h3>
+                {/* Legend / Instructions */}
+                <div className="flex items-center gap-4 mt-2 text-xs text-muted">
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded-full bg-primary flex items-center justify-center text-[8px] text-white"></div>
+                        <span>今天</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded flex items-center justify-center bg-amber-100 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-700/50">
+                            <Coffee className="w-2 h-2 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <span className="flex items-center gap-1">休息日 <MousePointerClick className="w-3 h-3" /> 点击日期切换</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div className="flex items-center gap-4 text-sm font-medium bg-background px-1 py-1 rounded-lg border border-border self-start md:self-auto">
                 <button onClick={prevMonth} className="p-1 hover:bg-surface text-muted hover:text-main rounded transition-colors">
                     <ChevronLeft className="w-5 h-5" />
                 </button>
@@ -355,17 +516,36 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
             {/* Days */}
             {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
-                const daySubs = calendarData[day] || [];
+                const dayData = calendarData[day];
                 const isToday = new Date().toDateString() === new Date(viewDate.getFullYear(), viewDate.getMonth(), day).toDateString();
+                const isSunday = new Date(viewDate.getFullYear(), viewDate.getMonth(), day).getDay() === 0;
 
                 return (
-                    <div key={`day-${day}`} className={`bg-surface p-2 min-h-[100px] relative group hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${isToday ? 'bg-primary/5' : ''}`}>
-                        <div className={`text-sm mb-2 w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-primary text-white font-bold' : 'text-muted'}`}>
-                            {day}
+                    <div 
+                        key={`day-${day}`} 
+                        onClick={() => onToggleRestDay(dayData.dateStr)}
+                        className={`bg-surface p-2 min-h-[100px] relative group hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer select-none
+                            ${dayData.isRest ? 'bg-amber-50 dark:bg-amber-950/20' : ''}
+                        `}
+                    >
+                        {/* Status Indicators */}
+                        <div className="flex justify-between items-start mb-2">
+                            <div className={`text-sm w-6 h-6 flex items-center justify-center rounded-full transition-colors
+                                ${isToday ? 'bg-primary text-white font-bold' : 
+                                  isSunday ? 'text-red-400' : 'text-muted'}
+                            `}>
+                                {day}
+                            </div>
+                            {dayData.isRest && (
+                                <div className="text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded flex items-center gap-1 border border-amber-200 dark:border-amber-800/50">
+                                    <Coffee className="w-3 h-3" /> <span className="hidden sm:inline">休息</span>
+                                </div>
+                            )}
                         </div>
+
                         <div className="space-y-1">
-                            {daySubs.map(sub => (
-                                <div key={sub.id} className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/50 text-xs text-slate-600 dark:text-slate-300 hover:border-primary/50 hover:text-primary dark:hover:text-white transition-all cursor-default" title={`${sub.name} - ${formatCurrency(sub.price)}`}>
+                            {dayData.subs.map(sub => (
+                                <div key={sub.id} className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800/50 text-xs text-indigo-600 dark:text-indigo-300 transition-all truncate" title={`${sub.name} - ${formatCurrency(sub.price)}`}>
                                     <div 
                                         className="w-1.5 h-1.5 rounded-full shrink-0" 
                                         style={{ backgroundColor: CATEGORIES[sub.category]?.color || '#cbd5e1' }}
@@ -387,5 +567,10 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
     </div>
   );
 };
+
+// Helper for smaller edit icon
+const Edit2IconMini = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50 hover:opacity-100"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+);
 
 export default Dashboard;

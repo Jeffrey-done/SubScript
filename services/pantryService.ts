@@ -7,6 +7,7 @@ const BASKET_NAME = 'subscript_backup'; // The storage bucket name
 export interface BackupData {
   subscriptions: Subscription[];
   budget: Budget;
+  restDays?: string[];
   lastUpdated: string;
 }
 
@@ -16,7 +17,7 @@ export const pantryService = {
    * @param pantryId The user's Pantry ID
    * @param data The data to backup
    */
-  async uploadBackup(pantryId: string, data: { subscriptions: Subscription[]; budget: Budget }) {
+  async uploadBackup(pantryId: string, data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[] }) {
     if (!pantryId) throw new Error('请输入 Pantry ID');
 
     const payload: BackupData = {

@@ -1,3 +1,4 @@
+
 export type CycleType = 'monthly' | 'yearly' | 'weekly';
 
 export type CategoryType = 'entertainment' | 'utilities' | 'software' | 'insurance' | 'other';
@@ -17,6 +18,8 @@ export interface Subscription {
 export interface Budget {
   monthly: number;
   yearly: number;
+  baseSalary: number; // Added base salary
+  commission: number; // Added commission
 }
 
 export interface SpendingStats {

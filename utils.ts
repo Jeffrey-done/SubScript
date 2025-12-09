@@ -5,6 +5,7 @@ export const formatCurrency = (amount: number, currency: string = 'CNY') => {
     style: 'currency',
     currency: currency,
     minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(amount);
 };
 
@@ -78,4 +79,22 @@ export const calculateStats = (subscriptions: Subscription[]) => {
       color: '', // Will be filled in component
     })),
   };
+};
+
+// --- Salary Calculation Helpers ---
+
+export const getDaysInMonth = (year: number, month: number) => {
+  return new Date(year, month + 1, 0).getDate();
+};
+
+export const countSundaysInMonth = (year: number, month: number) => {
+  const days = getDaysInMonth(year, month);
+  let count = 0;
+  for (let day = 1; day <= days; day++) {
+    const date = new Date(year, month, day);
+    if (date.getDay() === 0) { // 0 represents Sunday
+      count++;
+    }
+  }
+  return count;
 };

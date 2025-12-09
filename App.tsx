@@ -10,6 +10,8 @@ import SettingsModal from './components/SettingsModal';
 const DEFAULT_BUDGET: Budget = {
   monthly: 2000,
   yearly: 24000,
+  baseSalary: 4500, // Default base salary
+  commission: 0,    // Default commission
 };
 
 function App() {
@@ -20,7 +22,17 @@ function App() {
 
   const [budget, setBudget] = useState<Budget>(() => {
     const saved = localStorage.getItem('budget');
-    return saved ? JSON.parse(saved) : DEFAULT_BUDGET;
+    // Migration for old data
+    const parsed = saved ? JSON.parse(saved) : DEFAULT_BUDGET;
+    if (parsed.baseSalary === undefined) parsed.baseSalary = 4500;
+    if (parsed.commission === undefined) parsed.commission = 0;
+    return parsed;
+  });
+
+  // Store rest days as an array of ISO date strings "YYYY-MM-DD"
+  const [restDays, setRestDays] = useState<string[]>(() => {
+    const saved = localStorage.getItem('restDays');
+    return saved ? JSON.parse(saved) : [];
   });
 
   // Theme State
@@ -69,6 +81,10 @@ function App() {
     localStorage.setItem('budget', JSON.stringify(budget));
   }, [budget]);
 
+  useEffect(() => {
+    localStorage.setItem('restDays', JSON.stringify(restDays));
+  }, [restDays]);
+
   const toggleTheme = () => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   };
@@ -102,13 +118,24 @@ function App() {
     setBudget(newBudget);
   };
 
-  const handleDataRestore = (data: { subscriptions: Subscription[]; budget: Budget }) => {
+  const handleToggleRestDay = (dateStr: string) => {
+    setRestDays(prev => {
+      if (prev.includes(dateStr)) {
+        return prev.filter(d => d !== dateStr);
+      } else {
+        return [...prev, dateStr];
+      }
+    });
+  };
+
+  const handleDataRestore = (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[] }) => {
     // Basic validation
     if (Array.isArray(data.subscriptions)) {
       setIsLoading(true);
       setTimeout(() => {
         setSubscriptions(data.subscriptions);
         if (data.budget) setBudget(data.budget);
+        if (Array.isArray(data.restDays)) setRestDays(data.restDays);
         setIsLoading(false);
       }, 1000); // 1 second delay for visual feedback
     } else {
@@ -228,6 +255,8 @@ function App() {
                 subscriptions={subscriptions} 
                 budget={budget}
                 onUpdateBudget={handleUpdateBudget}
+                restDays={restDays}
+                onToggleRestDay={handleToggleRestDay}
               />
             ) : (
               <div className="space-y-6">
@@ -304,7 +333,7 @@ function App() {
       <SettingsModal 
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        currentData={{ subscriptions, budget }}
+        currentData={{ subscriptions, budget, restDays }}
         onRestore={handleDataRestore}
       />
 

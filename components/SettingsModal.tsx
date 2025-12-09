@@ -10,8 +10,9 @@ interface Props {
   currentData: {
     subscriptions: Subscription[];
     budget: Budget;
+    restDays: string[];
   };
-  onRestore: (data: { subscriptions: Subscription[]; budget: Budget }) => void;
+  onRestore: (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[] }) => void;
 }
 
 const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestore }) => {
