@@ -1,19 +1,23 @@
-import { Subscription, Budget, CATEGORIES, AIConfig } from '../types';
+
+import { Subscription, Budget, CATEGORIES, AIConfig, AIModelConfig } from '../types';
 import { calculateStats } from '../utils';
 
-const WS_URL = 'wss://maas-api.cn-huabei-1.xf-yun.com/v1.1/chat';
+const CHAT_WS_URL = 'wss://maas-api.cn-huabei-1.xf-yun.com/v1.1/chat';
+const IMAGE_API_URL = 'https://maas-api.cn-huabei-1.xf-yun.com/v2.1/tti';
+const API_HOST = "maas-api.cn-huabei-1.xf-yun.com";
 
 /**
  * Generate the HMAC-SHA256 signature and authorization URL
+ * Supports both WebSocket (GET) and HTTP (POST) auth generation
  */
-async function getAuthUrl(config: AIConfig) {
-    const host = "maas-api.cn-huabei-1.xf-yun.com";
+async function getAuthUrl(config: AIModelConfig, path: string, method: string = "GET"): Promise<string> {
     const date = new Date().toUTCString();
     const algorithm = "hmac-sha256";
     const headers = "host date request-line";
-    const requestLine = "GET /v1.1/chat HTTP/1.1";
+    const requestLine = `${method} ${path} HTTP/1.1`;
     
-    const signatureOrigin = `host: ${host}\ndate: ${date}\n${requestLine}`;
+    // 1. Signature Calculation
+    const signatureOrigin = `host: ${API_HOST}\ndate: ${date}\n${requestLine}`;
     
     const encoder = new TextEncoder();
     const keyData = encoder.encode(config.apiSecret);
@@ -30,8 +34,120 @@ async function getAuthUrl(config: AIConfig) {
     const authorizationOrigin = `api_key="${config.apiKey}", algorithm="${algorithm}", headers="${headers}", signature="${signatureBase64}"`;
     const authorization = btoa(authorizationOrigin);
     
-    return `${WS_URL}?authorization=${authorization}&date=${encodeURI(date)}&host=${host}`;
+    // 2. Query Params Construction
+    // IMPORTANT: Use encodeURIComponent logic or replace + with %20 because 
+    // standard URLSearchParams encodes spaces as '+', but some APIs require '%20'
+    const params = new URLSearchParams();
+    params.append("authorization", authorization);
+    params.append("date", date);
+    params.append("host", API_HOST);
+
+    const queryString = params.toString().replace(/\+/g, '%20');
+
+    // 3. Return Full URL
+    if (method === "GET") {
+         return `${CHAT_WS_URL}?${queryString}`;
+    } else {
+         return `${IMAGE_API_URL}?${queryString}`;
+    }
 }
+
+/**
+ * Generate an image based on a prompt
+ */
+export const generateImage = async (
+    prompt: string,
+    config: AIConfig
+): Promise<string> => {
+    try {
+        const imageConfig = config.image;
+        if (!imageConfig.appId || !imageConfig.apiSecret || !imageConfig.apiKey) {
+            throw new Error("请先在设置中配置绘图 AI 密钥");
+        }
+
+        // 1. Check Proxy - STRICTLY REQUIRED for Web/Browser
+        // iFlytek API does not support CORS, so we cannot call it directly from browser.
+        if (!config.proxyUrl) {
+             throw new Error("Web 端使用绘图功能必须配置代理 (Proxy URL)。请在设置中填写您的 Cloudflare Worker 地址。");
+        }
+
+        // 2. Get URL
+        let url = await getAuthUrl(imageConfig, "/v2.1/tti", "POST");
+
+        // 3. Apply Proxy
+        // Reconstruct URL to point to Proxy but keep parameters
+        const urlObj = new URL(url);
+        // Replace the origin (https://maas-api...) with the proxy url
+        const proxyBase = config.proxyUrl.replace(/\/$/, ''); // Remove trailing slash if user added it
+        
+        // We replace the origin of the signed URL with the proxy origin
+        // e.g. https://maas-api.../v2.1/tti?... -> https://my-worker.../v2.1/tti?...
+        url = url.replace(urlObj.origin, proxyBase);
+
+        const body = {
+            header: {
+                app_id: imageConfig.appId,
+                uid: "user_" + Date.now(),
+                patch_id: ["0"] // Required by API: 0 for default/no-lora
+            },
+            parameter: {
+                chat: {
+                    domain: imageConfig.domain || "xopzimageturbo", 
+                    width: 512,
+                    height: 512,
+                    seed: Math.floor(Math.random() * 100000),
+                    num_inference_steps: 25,
+                    guidance_scale: 7.5
+                }
+            },
+            payload: {
+                message: {
+                    text: [{ role: "user", content: prompt }]
+                }
+            }
+        };
+
+        let response;
+        try {
+            response = await fetch(url, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(body),
+                mode: 'cors', // Explicitly state we want CORS
+                credentials: 'omit', // Important: don't send cookies/auth headers that might confuse proxy/api
+                referrerPolicy: 'no-referrer'
+            });
+        } catch (networkError: any) {
+            console.error("Network request failed", networkError);
+            throw new Error(`无法连接到代理服务器 (${networkError.message})。请检查您的 Proxy URL 是否正确，以及 Cloudflare Worker 是否已部署。`);
+        }
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP Error ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        
+        if (data.header.code !== 0) {
+            // Throw specific API message (e.g., "Illegal access", "Invalid param")
+            throw new Error(`${data.header.message} (Code: ${data.header.code})`);
+        }
+
+        const base64Content = data.payload?.choices?.text?.[0]?.content;
+        if (!base64Content) {
+            throw new Error("API 返回了空图片数据");
+        }
+
+        return `data:image/png;base64,${base64Content}`;
+
+    } catch (e: any) {
+        console.error("Image Gen Error", e);
+        throw e;
+    }
+};
 
 /**
  * Prepares the prompt based on user data
@@ -84,22 +200,24 @@ export const analyzeFinances = async (
     onError: (error: string) => void
 ) => {
     try {
-        if (!config.appId || !config.apiSecret || !config.apiKey) {
-            throw new Error("请在设置中配置 AI API 凭证");
+        const chatConfig = config.chat;
+        if (!chatConfig.appId || !chatConfig.apiSecret || !chatConfig.apiKey) {
+            throw new Error("请在设置中配置 AI 对话密钥");
         }
 
-        const url = await getAuthUrl(config);
+        const url = await getAuthUrl(chatConfig, "/v1.1/chat", "GET");
+        
         const socket = new WebSocket(url);
 
         socket.onopen = () => {
             const params = {
                 header: {
-                    app_id: config.appId,
-                    uid: "user_default"
+                    app_id: chatConfig.appId,
+                    uid: "user_" + Math.random().toString(36).substring(7)
                 },
                 parameter: {
                     chat: {
-                        domain: config.domain || "xdeepseekv3", // Default to xdeepseekv3 if not set
+                        domain: chatConfig.domain || "xdeepseekv3",
                         temperature: 0.5,
                         max_tokens: 4096 
                     }
@@ -131,9 +249,12 @@ export const analyzeFinances = async (
 
                 if (data.payload && data.payload.choices && data.payload.choices.text) {
                     const text = data.payload.choices.text[0].content;
-                    onToken(text);
+                    if (text) {
+                        onToken(text);
+                    }
                 }
 
+                // Status 2 means generation complete
                 if (data.header.status === 2) {
                     onComplete();
                     socket.close();
@@ -145,7 +266,7 @@ export const analyzeFinances = async (
 
         socket.onerror = (error) => {
             console.error("WebSocket Error", error);
-            onError("Connection error occurred. Please check your network or API keys.");
+            onError("网络连接错误或 API 密钥无效，请检查设置。");
         };
 
         socket.onclose = () => {

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Sparkles, RefreshCw, Zap, Bot } from 'lucide-react';
 import { Subscription, Budget, AIConfig } from '../types';

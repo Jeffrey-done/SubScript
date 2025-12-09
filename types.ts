@@ -1,4 +1,5 @@
 
+
 export type CycleType = 'monthly' | 'yearly' | 'weekly';
 
 export type CategoryType = 'entertainment' | 'utilities' | 'software' | 'insurance' | 'other';
@@ -28,11 +29,17 @@ export interface SpendingStats {
   categoryBreakdown: { name: string; value: number; color: string }[];
 }
 
-export interface AIConfig {
+export interface AIModelConfig {
   appId: string;
   apiSecret: string;
   apiKey: string;
   domain: string;
+}
+
+export interface AIConfig {
+  chat: AIModelConfig;
+  image: AIModelConfig;
+  proxyUrl?: string; // Optional Proxy URL to bypass CORS
 }
 
 export const CATEGORIES: Record<CategoryType, { label: string; color: string }> = {

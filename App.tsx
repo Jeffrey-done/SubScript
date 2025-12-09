@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect } from 'react';
 import { Plus, LayoutDashboard, List, Wallet, Moon, Sun, Settings, AlertTriangle } from 'lucide-react';
 import { Subscription, Budget, AIConfig } from './types';
@@ -15,10 +17,19 @@ const DEFAULT_BUDGET: Budget = {
 };
 
 const DEFAULT_AI_CONFIG: AIConfig = {
-    appId: '1198a631',
-    apiSecret: 'ODgwZWEwZWIxMmQ2M2VmNDhiZTBiMzlk',
-    apiKey: '7fc4633e7541e7fdc26f295fd10f7b77',
-    domain: 'xdeepseekv32'
+    chat: {
+        appId: '1198a631',
+        apiSecret: 'ODgwZWEwZWIxMmQ2M2VmNDhiZTBiMzlk',
+        apiKey: '7fc4633e7541e7fdc26f295fd10f7b77',
+        domain: 'xdeepseekv32'
+    },
+    image: {
+        appId: '1198a631',
+        apiSecret: 'ODgwZWEwZWIxMmQ2M2VmNDhiZTBiMzlk',
+        apiKey: '7fc4633e7541e7fdc26f295fd10f7b77',
+        domain: 'xopzimageturbo'
+    },
+    proxyUrl: '' // Default empty
 };
 
 function App() {
@@ -45,7 +56,29 @@ function App() {
   // AI Configuration
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
     const saved = localStorage.getItem('aiConfig');
-    return saved ? JSON.parse(saved) : DEFAULT_AI_CONFIG;
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        // Migration: check if it's the old flat structure (has appId at root)
+        // @ts-ignore
+        if (parsed.appId) {
+            return {
+                chat: {
+                    // @ts-ignore
+                    appId: parsed.appId,
+                    // @ts-ignore
+                    apiSecret: parsed.apiSecret,
+                    // @ts-ignore
+                    apiKey: parsed.apiKey,
+                    // @ts-ignore
+                    domain: parsed.domain || 'xdeepseekv32'
+                },
+                image: DEFAULT_AI_CONFIG.image,
+                proxyUrl: ''
+            };
+        }
+        return { ...DEFAULT_AI_CONFIG, ...parsed };
+    }
+    return DEFAULT_AI_CONFIG;
   });
 
   // Theme State
@@ -347,6 +380,7 @@ function App() {
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveSubscription}
         initialData={editingSub}
+        aiConfig={aiConfig}
       />
 
       <SettingsModal 

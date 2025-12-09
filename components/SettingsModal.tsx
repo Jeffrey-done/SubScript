@@ -1,5 +1,6 @@
+
 import React, { useRef, useState, useEffect } from 'react';
-import { X, Settings, Download, Upload, FileJson, Check, AlertCircle, Cloud, ExternalLink, Bot, Key, Eye, EyeOff } from 'lucide-react';
+import { X, Settings, Download, Upload, FileJson, Check, AlertCircle, Cloud, ExternalLink, Bot, Eye, EyeOff, MessageSquareText, Image as ImageIcon, Globe } from 'lucide-react';
 import { Subscription, Budget, AIConfig } from '../types';
 import { pantryService } from '../services/pantryService';
 
@@ -26,7 +27,9 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
   
   // AI Config State
   const [localAiConfig, setLocalAiConfig] = useState<AIConfig>(aiConfig);
-  const [showSecrets, setShowSecrets] = useState(false);
+  const [showChatSecrets, setShowChatSecrets] = useState(false);
+  const [showImageSecrets, setShowImageSecrets] = useState(false);
+  const [activeAiTab, setActiveAiTab] = useState<'chat' | 'image'>('chat');
 
   // File Input
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -191,64 +194,156 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
           
           {/* AI Config Section */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <Bot className="w-5 h-5 text-purple-500" />
-                    <h4 className="text-sm font-bold text-main">AI 模型配置 (星火/DeepSeek)</h4>
+            <div className="flex items-center gap-2">
+                <Bot className="w-5 h-5 text-purple-500" />
+                <div>
+                    <h4 className="text-sm font-bold text-main">AI 模型配置</h4>
+                    <p className="text-[10px] text-muted">分别配置对话 (财务顾问) 和绘图 (图标生成) 的 API 密钥</p>
                 </div>
-                <button 
-                    onClick={() => setShowSecrets(!showSecrets)}
-                    className="text-muted hover:text-main"
-                    title={showSecrets ? "隐藏密钥" : "显示密钥"}
-                >
-                    {showSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
             </div>
 
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl space-y-3 border border-border">
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="text-xs text-muted mb-1 block">App ID</label>
-                        <input 
-                            type="text" 
-                            value={localAiConfig.appId}
-                            onChange={(e) => setLocalAiConfig({...localAiConfig, appId: e.target.value})}
-                            className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none"
-                            placeholder="1198a631"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-xs text-muted mb-1 block">Domain</label>
-                        <input 
-                            type="text" 
-                            value={localAiConfig.domain}
-                            onChange={(e) => setLocalAiConfig({...localAiConfig, domain: e.target.value})}
-                            className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none"
-                            placeholder="xdeepseekv3"
-                        />
-                    </div>
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl space-y-4 border border-border">
+                {/* Tabs */}
+                <div className="flex bg-white dark:bg-slate-900 rounded-lg p-1 border border-border">
+                    <button 
+                        onClick={() => setActiveAiTab('chat')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded-md transition-all ${activeAiTab === 'chat' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'text-muted hover:text-main'}`}
+                    >
+                        <MessageSquareText className="w-3.5 h-3.5" />
+                        对话模型
+                    </button>
+                    <button 
+                         onClick={() => setActiveAiTab('image')}
+                         className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded-md transition-all ${activeAiTab === 'image' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'text-muted hover:text-main'}`}
+                    >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        绘图模型
+                    </button>
                 </div>
 
-                <div>
-                    <label className="text-xs text-muted mb-1 block">API Secret</label>
-                    <input 
-                        type={showSecrets ? "text" : "password"}
-                        value={localAiConfig.apiSecret}
-                        onChange={(e) => setLocalAiConfig({...localAiConfig, apiSecret: e.target.value})}
+                {activeAiTab === 'chat' ? (
+                    <div className="space-y-3 animate-in fade-in slide-in-from-left-2 duration-200">
+                         <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-purple-600 dark:text-purple-400">对话配置 (Spark / DeepSeek)</span>
+                            <button 
+                                onClick={() => setShowChatSecrets(!showChatSecrets)}
+                                className="text-muted hover:text-main"
+                            >
+                                {showChatSecrets ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                         </div>
+                         <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs text-muted mb-1 block">App ID</label>
+                                <input 
+                                    type="text" 
+                                    value={localAiConfig.chat.appId}
+                                    onChange={(e) => setLocalAiConfig({...localAiConfig, chat: {...localAiConfig.chat, appId: e.target.value}})}
+                                    className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none"
+                                    placeholder="1198a631"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-muted mb-1 block">Domain</label>
+                                <input 
+                                    type="text" 
+                                    value={localAiConfig.chat.domain}
+                                    onChange={(e) => setLocalAiConfig({...localAiConfig, chat: {...localAiConfig.chat, domain: e.target.value}})}
+                                    className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none"
+                                    placeholder="xdeepseekv3"
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-xs text-muted mb-1 block">API Secret</label>
+                            <input 
+                                type={showChatSecrets ? "text" : "password"}
+                                value={localAiConfig.chat.apiSecret}
+                                onChange={(e) => setLocalAiConfig({...localAiConfig, chat: {...localAiConfig.chat, apiSecret: e.target.value}})}
+                                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none font-mono"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs text-muted mb-1 block">API Key</label>
+                            <input 
+                                type={showChatSecrets ? "text" : "password"}
+                                value={localAiConfig.chat.apiKey}
+                                onChange={(e) => setLocalAiConfig({...localAiConfig, chat: {...localAiConfig.chat, apiKey: e.target.value}})}
+                                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none font-mono"
+                            />
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-3 animate-in fade-in slide-in-from-right-2 duration-200">
+                        <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-purple-600 dark:text-purple-400">绘图配置 (Image Generation)</span>
+                            <button 
+                                onClick={() => setShowImageSecrets(!showImageSecrets)}
+                                className="text-muted hover:text-main"
+                            >
+                                {showImageSecrets ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                        </div>
+                         <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs text-muted mb-1 block">App ID</label>
+                                <input 
+                                    type="text" 
+                                    value={localAiConfig.image.appId}
+                                    onChange={(e) => setLocalAiConfig({...localAiConfig, image: {...localAiConfig.image, appId: e.target.value}})}
+                                    className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none"
+                                    placeholder="1198a631"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-muted mb-1 block">Domain</label>
+                                <input 
+                                    type="text" 
+                                    value={localAiConfig.image.domain}
+                                    onChange={(e) => setLocalAiConfig({...localAiConfig, image: {...localAiConfig.image, domain: e.target.value}})}
+                                    className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none"
+                                    placeholder="xopzimageturbo"
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-xs text-muted mb-1 block">API Secret</label>
+                            <input 
+                                type={showImageSecrets ? "text" : "password"}
+                                value={localAiConfig.image.apiSecret}
+                                onChange={(e) => setLocalAiConfig({...localAiConfig, image: {...localAiConfig.image, apiSecret: e.target.value}})}
+                                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none font-mono"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs text-muted mb-1 block">API Key</label>
+                            <input 
+                                type={showImageSecrets ? "text" : "password"}
+                                value={localAiConfig.image.apiKey}
+                                onChange={(e) => setLocalAiConfig({...localAiConfig, image: {...localAiConfig.image, apiKey: e.target.value}})}
+                                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none font-mono"
+                            />
+                        </div>
+                    </div>
+                )}
+                
+                {/* Proxy Settings */}
+                <div className="pt-2 border-t border-dashed border-border mt-2">
+                     <label className="text-xs font-semibold text-main mb-1 flex items-center gap-1">
+                        <Globe className="w-3.5 h-3.5" /> 
+                        代理设置 (绘图功能必填)
+                     </label>
+                     <p className="text-[10px] text-muted mb-2 leading-relaxed">
+                        由于浏览器安全策略 (CORS)，Web 端使用绘图功能<b>必须</b>配置 Cloudflare Worker 代理。<br/>
+                        如果不填写，绘图请求将会失败。
+                     </p>
+                     <input 
+                        type="text" 
+                        value={localAiConfig.proxyUrl || ''}
+                        onChange={(e) => setLocalAiConfig({...localAiConfig, proxyUrl: e.target.value})}
                         className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none font-mono"
-                        placeholder="API Secret"
-                    />
-                </div>
-
-                <div>
-                    <label className="text-xs text-muted mb-1 block">API Key</label>
-                    <input 
-                        type={showSecrets ? "text" : "password"}
-                        value={localAiConfig.apiKey}
-                        onChange={(e) => setLocalAiConfig({...localAiConfig, apiKey: e.target.value})}
-                        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none font-mono"
-                        placeholder="API Key"
-                    />
+                        placeholder="例如: https://my-worker.workers.dev"
+                     />
                 </div>
 
                 <button 
