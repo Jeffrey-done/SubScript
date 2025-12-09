@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { Plus, LayoutDashboard, List, Wallet, Moon, Sun, Settings, AlertTriangle } from 'lucide-react';
 import { Subscription, Budget, AIConfig } from './types';
@@ -179,7 +178,7 @@ function App() {
     });
   };
 
-  const handleDataRestore = (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[] }) => {
+  const handleDataRestore = (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[]; aiConfig?: AIConfig }) => {
     // Basic validation
     if (Array.isArray(data.subscriptions)) {
       setIsLoading(true);
@@ -187,6 +186,9 @@ function App() {
         setSubscriptions(data.subscriptions);
         if (data.budget) setBudget(data.budget);
         if (Array.isArray(data.restDays)) setRestDays(data.restDays);
+        if (data.aiConfig) {
+            setAiConfig(prev => ({ ...prev, ...data.aiConfig }));
+        }
         setIsLoading(false);
       }, 1000); // 1 second delay for visual feedback
     } else {
@@ -386,7 +388,7 @@ function App() {
       <SettingsModal 
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        currentData={{ subscriptions, budget, restDays }}
+        currentData={{ subscriptions, budget, restDays, aiConfig }}
         onRestore={handleDataRestore}
         aiConfig={aiConfig}
         onUpdateAIConfig={setAiConfig}

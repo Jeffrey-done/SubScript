@@ -1,5 +1,5 @@
 
-import { Subscription, Budget } from '../types';
+import { Subscription, Budget, AIConfig } from '../types';
 
 const BASE_URL = 'https://getpantry.cloud/apiv1/pantry';
 const BASKET_NAME = 'subscript_backup'; // The storage bucket name
@@ -8,6 +8,7 @@ export interface BackupData {
   subscriptions: Subscription[];
   budget: Budget;
   restDays?: string[];
+  aiConfig?: AIConfig;
   lastUpdated: string;
 }
 
@@ -17,7 +18,7 @@ export const pantryService = {
    * @param pantryId The user's Pantry ID
    * @param data The data to backup
    */
-  async uploadBackup(pantryId: string, data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[] }) {
+  async uploadBackup(pantryId: string, data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[]; aiConfig?: AIConfig }) {
     if (!pantryId) throw new Error('请输入 Pantry ID');
 
     const payload: BackupData = {
@@ -55,7 +56,6 @@ export const pantryService = {
 
     try {
       // Use timestamp query param to force cache busting effectively
-      // Removed complex cache control headers to be safer with strict CORS proxies/endpoints
       const response = await fetch(`${BASE_URL}/${pantryId}/basket/${BASKET_NAME}?t=${Date.now()}`, {
         method: 'GET',
         headers: {

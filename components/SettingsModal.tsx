@@ -11,8 +11,9 @@ interface Props {
     subscriptions: Subscription[];
     budget: Budget;
     restDays: string[];
+    aiConfig: AIConfig;
   };
-  onRestore: (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[] }) => void;
+  onRestore: (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[]; aiConfig?: AIConfig }) => void;
   aiConfig: AIConfig;
   onUpdateAIConfig: (config: AIConfig) => void;
 }
