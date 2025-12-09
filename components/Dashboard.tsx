@@ -260,9 +260,17 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                     </h3>
                 </div>
                 
-                <div>
-                  <p className="text-sm text-indigo-200 mb-1">每月总固定支出</p>
-                  <p className="text-4xl font-bold tracking-tight">{formatCurrency(stats.monthlyTotal)}</p>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-indigo-200 mb-1">每月总固定支出</p>
+                      <p className="text-3xl font-bold tracking-tight">{formatCurrency(stats.monthlyTotal)}</p>
+                    </div>
+                    <div className="border-l border-indigo-500/30 pl-4">
+                       <p className="text-sm text-indigo-200 mb-1">当月休息天数</p>
+                       <p className="text-3xl font-bold tracking-tight text-amber-300">
+                          {salaryStats.markedRestDaysInMonth} <span className="text-base font-medium text-indigo-200">天</span>
+                       </p>
+                    </div>
                 </div>
              </div>
           </div>
