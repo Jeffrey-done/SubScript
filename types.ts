@@ -1,5 +1,3 @@
-
-
 export type CycleType = 'monthly' | 'yearly' | 'weekly';
 
 export type CategoryType = 'entertainment' | 'utilities' | 'software' | 'insurance' | 'other';
@@ -44,12 +42,33 @@ export interface AIConfig {
   proxyUrl?: string; // Optional Proxy URL to bypass CORS
 }
 
+export type TransactionType = 'expense' | 'income';
+
+export interface Transaction {
+  id: string;
+  amount: number;
+  date: string; // ISO Date string YYYY-MM-DD
+  category: string;
+  description?: string;
+  type: TransactionType;
+}
+
 export const CATEGORIES: Record<CategoryType, { label: string; color: string }> = {
   entertainment: { label: '娱乐', color: '#8b5cf6' }, // Violet
   utilities: { label: '生活缴费', color: '#f59e0b' }, // Amber
   software: { label: '软件/SaaS', color: '#3b82f6' }, // Blue
   insurance: { label: '保险', color: '#10b981' }, // Emerald
   other: { label: '其他', color: '#64748b' }, // Slate
+};
+
+export const TRANSACTION_CATEGORIES: Record<string, { label: string; color: string; icon?: string }> = {
+  food: { label: '餐饮', color: '#f59e0b' },
+  transport: { label: '交通', color: '#3b82f6' },
+  shopping: { label: '购物', color: '#ec4899' },
+  housing: { label: '居住', color: '#8b5cf6' },
+  entertainment: { label: '娱乐', color: '#10b981' },
+  medical: { label: '医疗', color: '#ef4444' },
+  other: { label: '其他', color: '#64748b' },
 };
 
 export const CYCLES: Record<CycleType, { label: string; multiplier: number }> = {

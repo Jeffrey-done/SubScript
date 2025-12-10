@@ -1,5 +1,4 @@
-
-import { Subscription, Budget, AIConfig } from '../types';
+import { Subscription, Budget, AIConfig, Transaction } from '../types';
 
 const BASE_URL = 'https://getpantry.cloud/apiv1/pantry';
 const BASKET_NAME = 'subscript_backup'; // The storage bucket name
@@ -9,6 +8,7 @@ export interface BackupData {
   budget: Budget;
   restDays?: string[];
   aiConfig?: AIConfig;
+  transactions?: Transaction[];
   lastUpdated: string;
 }
 
@@ -18,7 +18,7 @@ export const pantryService = {
    * @param pantryId The user's Pantry ID
    * @param data The data to backup
    */
-  async uploadBackup(pantryId: string, data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[]; aiConfig?: AIConfig }) {
+  async uploadBackup(pantryId: string, data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[]; aiConfig?: AIConfig; transactions?: Transaction[] }) {
     if (!pantryId) throw new Error('请输入 Pantry ID');
 
     const payload: BackupData = {

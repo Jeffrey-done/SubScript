@@ -1,9 +1,8 @@
-
 import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { Subscription, CATEGORIES, Budget } from '../types';
+import { Subscription, CATEGORIES, Budget, Transaction, TRANSACTION_CATEGORIES } from '../types';
 import { calculateStats, formatCurrency, getDaysInMonth, countSundaysInMonth, getPaydayCountdown } from '../utils';
-import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator, Coffee, Coins, Bot, MousePointerClick, Timer, Repeat, ArrowRight, RotateCcw, Info } from 'lucide-react';
+import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator, Coffee, Coins, Bot, MousePointerClick, Timer, Repeat, ArrowRight, RotateCcw, Info, ReceiptText, Activity } from 'lucide-react';
 
 interface DashboardProps {
   subscriptions: Subscription[];
@@ -12,27 +11,64 @@ interface DashboardProps {
   restDays: string[];
   onToggleRestDay: (dateStr: string) => void;
   onOpenAI: () => void;
+  transactions: Transaction[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBudget, restDays, onToggleRestDay, onOpenAI }) => {
+const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBudget, restDays, onToggleRestDay, onOpenAI, transactions }) => {
   const [editingTarget, setEditingTarget] = useState<'monthly' | 'yearly' | 'baseSalary' | 'commission' | 'payday' | null>(null);
   const [tempBudgetValue, setTempBudgetValue] = useState('');
   
   // Calendar State
   const [viewDate, setViewDate] = useState(new Date());
 
-  const stats = useMemo(() => {
-    const data = calculateStats(subscriptions);
-    // Inject colors for chart
-    data.categoryBreakdown = data.categoryBreakdown.map(item => ({
-        ...item,
-        color: CATEGORIES[item.name as keyof typeof CATEGORIES]?.color || '#cbd5e1'
-    }));
-    return data;
-  }, [subscriptions]);
+  // --- Data Merging Logic for Charts ---
+  const mergedChartData = useMemo(() => {
+    // 1. Subscription Stats (Monthly Normalized)
+    const subStats = calculateStats(subscriptions);
+    
+    // 2. Transaction Stats (Filtered by VIEW Month)
+    const viewMonthPrefix = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`;
+    const monthlyExpenses = transactions.filter(t => 
+        t.type === 'expense' && t.date.startsWith(viewMonthPrefix)
+    );
 
-  const sortedBreakdown = [...stats.categoryBreakdown].sort((a, b) => b.value - a.value);
-  
+    const expenseMap: Record<string, number> = {};
+    
+    // Add Subscriptions
+    subStats.categoryBreakdown.forEach(item => {
+        // Map subscription categories to a unified key if needed, or keep distinct
+        // We prefix sub categories to avoid collision or merge if keys match
+        // For simplicity, we assume they are distinct enough or we map them.
+        // Subscription Category Keys: entertainment, utilities, software, insurance, other
+        expenseMap[item.name] = (expenseMap[item.name] || 0) + item.value;
+    });
+
+    // Add Transactions
+    monthlyExpenses.forEach(t => {
+        expenseMap[t.category] = (expenseMap[t.category] || 0) + t.amount;
+    });
+
+    // Transform to Chart Data
+    const data = Object.entries(expenseMap).map(([key, value]) => {
+        // Try to find label/color in SUBSCRIPTION categories first
+        // @ts-ignore
+        let config = CATEGORIES[key];
+        // If not found, look in TRANSACTION categories
+        if (!config) {
+            config = TRANSACTION_CATEGORIES[key];
+        }
+        
+        return {
+            name: key,
+            value: parseFloat(value.toFixed(2)),
+            label: config?.label || key,
+            color: config?.color || '#94a3b8'
+        };
+    }).filter(item => item.value > 0);
+
+    return data.sort((a, b) => b.value - a.value);
+  }, [subscriptions, transactions, viewDate]);
+
   // Payday Countdown
   const paydayCountdown = useMemo(() => {
     return getPaydayCountdown(budget.payday || 15);
@@ -96,8 +132,21 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
 
   const sourceMonthStats = useMemo(() => calculateSalaryForMonth(sourceDate), [sourceDate, restDays, budget.baseSalary, budget.commission]);
 
-  // Disposable Income is ALWAYS based on the SOURCE month
-  const disposableIncome = sourceMonthStats.totalIncome - stats.monthlyTotal;
+  // --- Bookkeeping (Expenses) ---
+  // We need to calculate how much has been spent in the CURRENT real month (where money is being spent from)
+  // Usually disposable income is "Money I have NOW" minus "Money I spent NOW".
+  const currentRealMonthPrefix = `${realToday.getFullYear()}-${String(realToday.getMonth() + 1).padStart(2, '0')}`;
+  
+  const variableExpenses = useMemo(() => {
+    return transactions
+        .filter(t => t.type === 'expense' && t.date.startsWith(currentRealMonthPrefix))
+        .reduce((sum, t) => sum + t.amount, 0);
+  }, [transactions, currentRealMonthPrefix]);
+
+  const subStats = calculateStats(subscriptions);
+
+  // Disposable Income = (Income Source) - (Fixed Subs Avg) - (Real Expenses this month)
+  const disposableIncome = sourceMonthStats.totalIncome - subStats.monthlyTotal - variableExpenses;
 
   // Calendar Logic
   const calendarData = useMemo(() => {
@@ -199,8 +248,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
       const newDelay = budget.salaryDelay === 1 ? 0 : 1;
       
       // Auto-switch view to the relevant source month for clarity
-      // If switching to Next Month Payment (1), source is Last Month.
-      // If switching to Current Month Payment (0), source is This Month.
       const now = new Date();
       let targetViewDate = new Date(now.getFullYear(), now.getMonth(), 1);
       
@@ -229,65 +276,75 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
     const isEditing = editingTarget === type;
 
     return (
-      <div className="bg-surface p-6 rounded-2xl border border-border shadow-lg relative group transition-colors">
-        <div className="flex justify-between items-start mb-2">
-            <div className="flex items-center gap-3 text-muted">
-                <div className={`p-2 ${iconColorClass} bg-opacity-10 rounded-lg`}>
-                    {icon}
+      <div className="bg-surface p-6 rounded-2xl border border-border shadow-lg relative group transition-colors flex flex-col justify-between">
+        <div>
+            <div className="flex justify-between items-start mb-2">
+                <div className="flex items-center gap-3 text-muted">
+                    <div className={`p-2 ${iconColorClass} bg-opacity-10 rounded-lg`}>
+                        {icon}
+                    </div>
+                    <span className="text-sm font-medium">{title}</span>
                 </div>
-                <span className="text-sm font-medium">{title}</span>
+                {!isEditing && (
+                     <button 
+                        onClick={() => startEditing(type, target)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-background rounded-md text-muted hover:text-main"
+                        title="设置预算目标"
+                     >
+                        <Settings2 className="w-4 h-4" />
+                     </button>
+                )}
             </div>
-            {!isEditing && (
-                 <button 
-                    onClick={() => startEditing(type, target)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-background rounded-md text-muted hover:text-main"
-                    title="设置预算目标"
-                 >
-                    <Settings2 className="w-4 h-4" />
-                 </button>
+            
+            <div className="mb-4">
+                <p className="text-3xl font-bold text-main tracking-tight">
+                    {formatCurrency(current)}
+                </p>
+            </div>
+
+            {isEditing ? (
+                <div className="flex items-center gap-2 mt-2 animate-in fade-in slide-in-from-top-2">
+                    <input 
+                        type="number" 
+                        value={tempBudgetValue}
+                        onChange={(e) => setTempBudgetValue(e.target.value)}
+                        className="w-full bg-background border border-slate-600 rounded px-2 py-1 text-sm text-main focus:ring-1 focus:ring-primary outline-none"
+                        autoFocus
+                    />
+                    <button onClick={saveBudget} className="p-1 text-emerald-500 hover:bg-background rounded"><Check className="w-4 h-4" /></button>
+                    <button onClick={() => setEditingTarget(null)} className="p-1 text-muted hover:bg-background rounded"><X className="w-4 h-4" /></button>
+                </div>
+            ) : (
+                <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-medium">
+                        <span className={isOverBudget ? 'text-red-400' : 'text-emerald-400'}>
+                            {Math.round((current / target) * 100)}%
+                        </span>
+                        <span className="text-muted">
+                            预算: {formatCurrency(target)}
+                        </span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div 
+                            className={`h-full rounded-full transition-all duration-500 ${isOverBudget ? 'bg-red-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${percentage}%` }}
+                        />
+                    </div>
+                    <p className="text-xs text-muted mt-1">
+                        {isOverBudget 
+                            ? `超出预算 ${formatCurrency(current - target)}` 
+                            : `剩余预算 ${formatCurrency(target - current)}`
+                        }
+                    </p>
+                </div>
             )}
         </div>
         
-        <div className="mb-4">
-            <p className="text-3xl font-bold text-main tracking-tight">
-                {formatCurrency(current)}
-            </p>
-        </div>
-
-        {isEditing ? (
-            <div className="flex items-center gap-2 mt-2 animate-in fade-in slide-in-from-top-2">
-                <input 
-                    type="number" 
-                    value={tempBudgetValue}
-                    onChange={(e) => setTempBudgetValue(e.target.value)}
-                    className="w-full bg-background border border-slate-600 rounded px-2 py-1 text-sm text-main focus:ring-1 focus:ring-primary outline-none"
-                    autoFocus
-                />
-                <button onClick={saveBudget} className="p-1 text-emerald-500 hover:bg-background rounded"><Check className="w-4 h-4" /></button>
-                <button onClick={() => setEditingTarget(null)} className="p-1 text-muted hover:bg-background rounded"><X className="w-4 h-4" /></button>
-            </div>
-        ) : (
-            <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-medium">
-                    <span className={isOverBudget ? 'text-red-400' : 'text-emerald-400'}>
-                        {Math.round((current / target) * 100)}%
-                    </span>
-                    <span className="text-muted">
-                        预算: {formatCurrency(target)}
-                    </span>
-                </div>
-                <div className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                    <div 
-                        className={`h-full rounded-full transition-all duration-500 ${isOverBudget ? 'bg-red-500' : 'bg-emerald-500'}`}
-                        style={{ width: `${percentage}%` }}
-                    />
-                </div>
-                <p className="text-xs text-muted mt-1">
-                    {isOverBudget 
-                        ? `超出预算 ${formatCurrency(current - target)}` 
-                        : `剩余预算 ${formatCurrency(target - current)}`
-                    }
-                </p>
+        {/* Active Subs Counter within budget card */}
+        {type === 'monthly' && (
+            <div className="mt-4 pt-3 border-t border-border flex items-center gap-2 text-xs text-muted">
+                <Activity className="w-3.5 h-3.5" />
+                <span>活跃订阅: <span className="text-main font-semibold">{subscriptions.length}</span></span>
             </div>
         )}
       </div>
@@ -307,9 +364,8 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
       
       {/* Salary & Disposable Income Card */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* LEFT CARD: Current Disposable Income (Based on REAL Payout) */}
+          {/* LEFT CARD */}
           <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 dark:from-indigo-900 dark:to-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between">
-             {/* Decorative background */}
              <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
              
              <div className="relative z-10">
@@ -329,31 +385,36 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm text-indigo-200 mb-1">固定支出 (订阅)</p>
-                      <p className="text-3xl font-bold tracking-tight">{formatCurrency(stats.monthlyTotal)}</p>
+                      <p className="text-2xl font-bold tracking-tight">{formatCurrency(subStats.monthlyTotal)}</p>
                     </div>
-                    <div className="border-l border-indigo-500/30 pl-4">
-                        <p className="text-sm text-indigo-200 mb-1 flex items-center gap-1">
-                            <Timer className="w-3.5 h-3.5" /> 距离发工资
-                        </p>
-                        <p className="text-3xl font-bold tracking-tight text-emerald-300">
-                            {paydayCountdown === 0 ? '今天!' : `${paydayCountdown} 天`}
-                        </p>
+                     <div>
+                      <p className="text-sm text-indigo-200 mb-1">日常支出 (本月)</p>
+                      <p className="text-2xl font-bold tracking-tight text-indigo-100">{formatCurrency(variableExpenses)}</p>
                     </div>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-indigo-500/30 flex items-center justify-between">
+                    <div className="flex items-center gap-1 text-sm text-indigo-200">
+                        <Timer className="w-3.5 h-3.5" /> 距离发工资
+                    </div>
+                     <p className="text-xl font-bold tracking-tight text-emerald-300">
+                        {paydayCountdown === 0 ? '今天!' : `${paydayCountdown} 天`}
+                    </p>
                 </div>
              </div>
              
              {/* Bottom Info Bar - Explicit Source */}
-             <div className="relative z-10 mt-6 pt-4 border-t border-indigo-500/30">
+             <div className="relative z-10 mt-4">
                 <div className="flex justify-between items-center text-xs text-indigo-200">
                      <div className="flex items-center gap-1">
-                        资金来源: <span className="font-bold text-white bg-white/20 px-1.5 rounded">{sourceMonthStats.month}月工资</span> (实发)
+                        资金来源: <span className="font-bold text-white bg-white/20 px-1.5 rounded">{sourceMonthStats.month}月工资</span>
                      </div>
-                     <div>总支出: <span className="font-bold text-white">{formatCurrency(stats.yearlyTotal)}</span>/年</div>
+                     <div>总固定年支: <span className="font-bold text-white">{formatCurrency(subStats.yearlyTotal)}</span></div>
                 </div>
              </div>
           </div>
 
-          {/* RIGHT CARD: Income Calculation & Editing */}
+          {/* RIGHT CARD */}
           <div className="bg-surface rounded-2xl p-6 border border-border shadow-xl relative overflow-hidden group">
              <div className="flex justify-between items-start mb-4">
                  <h3 className="text-lg font-semibold flex items-center gap-2 text-main">
@@ -375,7 +436,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
 
              <div className="space-y-4">
                  <div className="grid grid-cols-2 gap-4">
-                    {/* Left: Calculation Breakdown (Based on Calendar View) */}
+                    {/* Left: Calculation Breakdown */}
                     <div className="space-y-2 text-sm">
                         <div className="flex justify-between items-center mb-1">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
@@ -457,7 +518,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                         </div>
                     </div>
 
-                    {/* Right: Disposable Result (ALWAYS BASED ON SOURCE MONTH) */}
+                    {/* Right: Disposable Result */}
                     <div className="flex flex-col text-right border-l border-border pl-4">
                          {/* Toggle for Payment Delay */}
                          <div className="mb-auto flex justify-end">
@@ -481,7 +542,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                                 {formatCurrency(disposableIncome)}
                             </p>
                             
-                            {/* Logic to jump to source month if needed */}
                             {!isViewingSourceMonth && budget.salaryDelay === 1 && (
                                 <div className="mt-2 animate-in fade-in slide-in-from-right-4">
                                     <div className="text-[10px] text-orange-500 bg-orange-50 dark:bg-orange-900/20 p-1.5 rounded border border-orange-100 dark:border-orange-900/30 flex items-start gap-1">
@@ -515,7 +575,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                         <span>扣款天数: {viewMonthStats.effectiveDeductionDays}</span>
                      </div>
                      <div className="opacity-75">
-                         公式: ({viewMonthStats.base} - 扣款 + 提成) - 订阅支出
+                         公式: (工资 - 扣款 + 提成) - 固定订阅 - 本月日常支出
                      </div>
                  </div>
              </div>
@@ -526,42 +586,51 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {renderBudgetCard(
             '月度订阅预算', 
-            stats.monthlyTotal, 
+            subStats.monthlyTotal, 
             budget.monthly, 
             'monthly', 
             <Calculator className="w-5 h-5" />, 
             'bg-indigo-500 text-indigo-500'
         )}
 
-        <div className="bg-surface p-6 rounded-2xl border border-border shadow-lg flex flex-col justify-between transition-colors">
-          <div className="flex items-center gap-3 mb-2 text-muted">
+        <div className="bg-surface p-6 rounded-2xl border border-border shadow-lg flex flex-col justify-between transition-colors relative overflow-hidden">
+          <div className="flex items-center gap-3 mb-2 text-muted relative z-10">
             <div className="p-2 bg-rose-500/10 rounded-lg text-rose-500">
-                <Calendar className="w-5 h-5" />
+                <ReceiptText className="w-5 h-5" />
             </div>
-            <span className="text-sm font-medium">活跃订阅数</span>
+            <span className="text-sm font-medium">本月日常支出</span>
           </div>
-          <div>
+          <div className="relative z-10">
             <p className="text-3xl font-bold text-main tracking-tight">
-                {subscriptions.length}
+                {formatCurrency(variableExpenses)}
             </p>
             <p className="text-xs text-muted mt-4">
-               正在管理的订阅服务数量
+               {realToday.getMonth()+1}月累计非订阅支出
             </p>
+          </div>
+          <div className="absolute right-0 bottom-0 opacity-5 pointer-events-none">
+              <ReceiptText className="w-32 h-32" />
           </div>
         </div>
       </div>
 
       {/* Chart & Detailed Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart */}
+        {/* Chart - Uses Merged Data */}
         <div className="bg-surface p-6 rounded-2xl border border-border shadow-lg lg:col-span-2 transition-colors">
-            <h3 className="text-lg font-semibold text-main mb-6">支出构成</h3>
+            <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-semibold text-main">支出构成 (订阅 + 日常)</h3>
+                <span className="text-xs text-muted bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                    {viewDate.getMonth() + 1}月视图
+                </span>
+            </div>
+            
             <div className="h-[300px] w-full">
-                {subscriptions.length > 0 ? (
+                {mergedChartData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                         <Pie
-                        data={stats.categoryBreakdown}
+                        data={mergedChartData}
                         cx="50%"
                         cy="50%"
                         innerRadius={60}
@@ -570,7 +639,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                         dataKey="value"
                         stroke="none"
                         >
-                        {stats.categoryBreakdown.map((entry, index) => (
+                        {mergedChartData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                         </Pie>
@@ -583,30 +652,34 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                     </PieChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div className="flex h-full items-center justify-center text-muted">
-                        暂无数据
+                    <div className="flex h-full items-center justify-center text-muted flex-col gap-2">
+                        <Activity className="w-8 h-8 opacity-20" />
+                        <span>暂无支出数据</span>
                     </div>
                 )}
             </div>
         </div>
 
-        {/* Top Categories List */}
+        {/* Top Categories List - Uses Merged Data */}
         <div className="bg-surface p-6 rounded-2xl border border-border shadow-lg flex flex-col transition-colors">
           <h3 className="text-lg font-semibold text-main mb-4">分类排行</h3>
           <div className="space-y-4 overflow-y-auto flex-1 pr-2">
-            {sortedBreakdown.length > 0 ? sortedBreakdown.map((cat) => (
+            {mergedChartData.length > 0 ? mergedChartData.map((cat) => (
               <div key={cat.name} className="flex items-center justify-between group">
                 <div className="flex items-center gap-3">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color, boxShadow: `0 0 8px ${cat.color}` }}></div>
-                  <span className="text-slate-500 dark:text-slate-300 font-medium">{CATEGORIES[cat.name as keyof typeof CATEGORIES]?.label}</span>
+                  <span className="text-slate-500 dark:text-slate-300 font-medium">{cat.label}</span>
                 </div>
                 <div className="text-right">
                     <div className="text-main font-semibold">{formatCurrency(cat.value)}</div>
-                    <div className="text-xs text-muted">/ 月</div>
+                    {/* Show approximate breakdown if possible, or just value */}
                 </div>
               </div>
             )) : (
-                <p className="text-muted text-center mt-10">暂无数据</p>
+                <div className="text-muted text-center mt-10 text-sm">
+                    <p>暂无数据</p>
+                    <p className="text-xs opacity-60 mt-1">添加订阅或记账后显示</p>
+                </div>
             )}
           </div>
         </div>
@@ -620,7 +693,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                     <CalendarDays className="w-5 h-5 text-primary" />
                     考勤与订阅日历
                 </h3>
-                {/* Legend / Instructions */}
                 <div className="flex items-center gap-4 mt-2 text-xs text-muted">
                     <div className="flex items-center gap-1.5">
                         <div className="w-3 h-3 rounded-full bg-primary flex items-center justify-center text-[8px] text-white"></div>
@@ -659,19 +731,16 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
         </div>
 
         <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden border border-border">
-            {/* Weekday Headers */}
             {weekDays.map(day => (
                 <div key={day} className="bg-slate-100 dark:bg-slate-900/80 p-3 text-center text-xs font-semibold text-muted">
                     {day}
                 </div>
             ))}
 
-            {/* Empty Days Start */}
             {Array.from({ length: firstDayOfMonth }).map((_, i) => (
                 <div key={`empty-${i}`} className="bg-surface min-h-[100px]" />
             ))}
 
-            {/* Days */}
             {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
                 const dayData = calendarData[day];
@@ -686,7 +755,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                             ${dayData.isRest ? 'bg-amber-50 dark:bg-amber-950/20' : ''}
                         `}
                     >
-                        {/* Status Indicators */}
                         <div className="flex justify-between items-start mb-2">
                             <div className={`text-sm w-6 h-6 flex items-center justify-center rounded-full transition-colors
                                 ${isToday ? 'bg-primary text-white font-bold' : 
@@ -716,7 +784,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                 );
             })}
             
-             {/* Empty Days End */}
              {Array.from({ length: (42 - (firstDayOfMonth + daysInMonth)) % 7 }).map((_, i) => (
                 <div key={`empty-end-${i}`} className="bg-surface min-h-[100px]" />
             ))}

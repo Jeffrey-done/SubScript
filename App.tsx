@@ -1,14 +1,13 @@
-
-
-
 import React, { useState, useEffect } from 'react';
-import { Plus, LayoutDashboard, List, Wallet, Moon, Sun, Settings, AlertTriangle } from 'lucide-react';
-import { Subscription, Budget, AIConfig } from './types';
+import { Plus, LayoutDashboard, List, Wallet, Moon, Sun, Settings, ReceiptText } from 'lucide-react';
+import { Subscription, Budget, AIConfig, Transaction } from './types';
 import Dashboard from './components/Dashboard';
 import SubscriptionList from './components/SubscriptionList';
 import SubscriptionModal from './components/SubscriptionModal';
 import SettingsModal from './components/SettingsModal';
 import AIAnalysisModal from './components/AIAnalysisModal';
+import BookkeepingList from './components/BookkeepingList';
+import TransactionModal from './components/TransactionModal';
 
 const DEFAULT_BUDGET: Budget = {
   monthly: 2000,
@@ -86,45 +85,37 @@ function App() {
     return DEFAULT_AI_CONFIG;
   });
 
-  // Theme State
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    const saved = localStorage.getItem('theme');
-    return (saved as 'dark' | 'light') || 'dark';
+  // Transactions State
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    const saved = localStorage.getItem('transactions');
+    return saved ? JSON.parse(saved) : [];
   });
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'list'>('dashboard');
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
-  const [editingSub, setEditingSub] = useState<Subscription | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isSubModalOpen, setIsSubModalOpen] = useState(false);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   
-  // Delete Confirmation State
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [editingSub, setEditingSub] = useState<Subscription | undefined>(undefined);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | undefined>(undefined);
 
-  // Apply theme class to HTML element
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'subscriptions' | 'bookkeeping'>('dashboard');
+  const [darkMode, setDarkMode] = useState(false);
+
   useEffect(() => {
-    const root = window.document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-      // Update meta theme color
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#0f172a');
-    } else {
-      root.classList.remove('dark');
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#f1f5f9');
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setDarkMode(true);
     }
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  useEffect(() => {
-    // Simulate loading data
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 800);
-    return () => clearTimeout(timer);
   }, []);
 
-  // Persistence
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
   useEffect(() => {
     localStorage.setItem('subscriptions', JSON.stringify(subscriptions));
   }, [subscriptions]);
@@ -136,311 +127,233 @@ function App() {
   useEffect(() => {
     localStorage.setItem('restDays', JSON.stringify(restDays));
   }, [restDays]);
-  
+
   useEffect(() => {
     localStorage.setItem('aiConfig', JSON.stringify(aiConfig));
   }, [aiConfig]);
 
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
-  };
+  useEffect(() => {
+    localStorage.setItem('transactions', JSON.stringify(transactions));
+  }, [transactions]);
 
-  const handleSaveSubscription = (subData: Omit<Subscription, 'id'>) => {
+  const handleAddSubscription = (subData: Omit<Subscription, 'id'>) => {
     if (editingSub) {
-      setSubscriptions(prev => prev.map(sub => 
-        sub.id === editingSub.id ? { ...subData, id: sub.id } : sub
-      ));
+      setSubscriptions(subs => subs.map(s => s.id === editingSub.id ? { ...subData, id: editingSub.id } : s));
     } else {
-      const newSub: Subscription = {
-        ...subData,
-        id: crypto.randomUUID(),
-      };
-      setSubscriptions(prev => [...prev, newSub]);
+      const newSub: Subscription = { ...subData, id: crypto.randomUUID() };
+      setSubscriptions([...subscriptions, newSub]);
     }
     setEditingSub(undefined);
   };
 
-  const handleEdit = (sub: Subscription) => {
+  const handleDeleteSubscription = (id: string) => {
+    if (confirm('确定要删除这个订阅吗？')) {
+      setSubscriptions(subs => subs.filter(s => s.id !== id));
+    }
+  };
+
+  const handleEditSubscription = (sub: Subscription) => {
     setEditingSub(sub);
-    setIsModalOpen(true);
-  };
-
-  const openAddModal = () => {
-    setEditingSub(undefined);
-    setIsModalOpen(true);
-  };
-
-  const handleUpdateBudget = (newBudget: Budget) => {
-    setBudget(newBudget);
+    setIsSubModalOpen(true);
   };
 
   const handleToggleRestDay = (dateStr: string) => {
     setRestDays(prev => {
-      if (prev.includes(dateStr)) {
-        return prev.filter(d => d !== dateStr);
-      } else {
-        return [...prev, dateStr];
-      }
+        if (prev.includes(dateStr)) {
+            return prev.filter(d => d !== dateStr);
+        } else {
+            return [...prev, dateStr];
+        }
     });
   };
 
-  const handleDataRestore = (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[]; aiConfig?: AIConfig }) => {
-    // Basic validation
-    if (Array.isArray(data.subscriptions)) {
-      setIsLoading(true);
-      setTimeout(() => {
-        setSubscriptions(data.subscriptions);
-        if (data.budget) setBudget(data.budget);
-        if (Array.isArray(data.restDays)) setRestDays(data.restDays);
-        if (data.aiConfig) {
-            setAiConfig(prev => ({ ...prev, ...data.aiConfig }));
-        }
-        setIsLoading(false);
-      }, 1000); // 1 second delay for visual feedback
-    } else {
-      console.error('Invalid data format received during restore');
-    }
+  const handleRestoreData = (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[]; aiConfig?: AIConfig; transactions?: Transaction[] }) => {
+      if (data.subscriptions) setSubscriptions(data.subscriptions);
+      if (data.budget) setBudget(data.budget);
+      if (data.restDays) setRestDays(data.restDays);
+      if (data.aiConfig) setAiConfig(data.aiConfig);
+      if (data.transactions) setTransactions(data.transactions);
   };
 
-  // --- Delete Logic with Custom Modal ---
-  const requestDelete = (id: string) => {
-    setDeleteConfirmId(id);
+  // Transaction Handlers
+  const handleSaveTransaction = (tData: Omit<Transaction, 'id'>) => {
+      if (editingTransaction) {
+          setTransactions(prev => prev.map(t => t.id === editingTransaction.id ? { ...tData, id: editingTransaction.id } : t));
+      } else {
+          const newT: Transaction = { ...tData, id: crypto.randomUUID() };
+          setTransactions(prev => [...prev, newT]);
+      }
+      setEditingTransaction(undefined);
   };
 
-  const executeDelete = () => {
-    if (deleteConfirmId) {
-      setSubscriptions(prev => prev.filter(sub => sub.id !== deleteConfirmId));
-      setDeleteConfirmId(null);
-    }
+  const handleDeleteTransaction = (id: string) => {
+      if (confirm('确定要删除这条记录吗？')) {
+          setTransactions(prev => prev.filter(t => t.id !== id));
+      }
+  };
+
+  const handleEditTransaction = (t: Transaction) => {
+      setEditingTransaction(t);
+      setIsTransactionModalOpen(true);
   };
 
   return (
-    <div className="min-h-screen bg-background text-main transition-colors duration-300 font-sans flex flex-col md:flex-row h-screen overflow-hidden">
-      
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-64 flex-col bg-surface border-r border-border p-6 shrink-0 h-full relative z-20">
-        <div className="flex items-center gap-3 mb-10">
-          <div className="w-10 h-10 bg-gradient-to-br from-primary to-indigo-700 rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
-            <Wallet className="w-6 h-6 text-white" />
-          </div>
-          <h1 className="text-xl font-bold tracking-tight">SubScript</h1>
-        </div>
-
-        <nav className="flex-1 space-y-2">
-          <button 
-            onClick={() => setActiveTab('dashboard')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
-              activeTab === 'dashboard' 
-                ? 'bg-primary text-white shadow-lg shadow-primary/25' 
-                : 'text-muted hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-main'
-            }`}
-          >
-            <LayoutDashboard className={`w-5 h-5 ${activeTab === 'dashboard' ? 'text-white' : 'text-slate-400 group-hover:text-main'}`} />
-            <span className="font-medium">概览仪表盘</span>
-          </button>
-          
-          <button 
-            onClick={() => setActiveTab('list')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
-              activeTab === 'list' 
-                ? 'bg-primary text-white shadow-lg shadow-primary/25' 
-                : 'text-muted hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-main'
-            }`}
-          >
-            <div className="relative">
-                <List className={`w-5 h-5 ${activeTab === 'list' ? 'text-white' : 'text-slate-400 group-hover:text-main'}`} />
-                {subscriptions.length > 0 && activeTab !== 'list' && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-surface"></span>
-                )}
-            </div>
-            <span className="font-medium">订阅列表</span>
-            <span className={`ml-auto text-xs font-semibold px-2 py-0.5 rounded-md ${
-                activeTab === 'list' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-muted'
-            }`}>
-                {subscriptions.length}
-            </span>
-          </button>
-        </nav>
-
-        <div className="pt-6 border-t border-border space-y-3">
-          <button 
-             onClick={() => setIsSettingsOpen(true)}
-             className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-muted hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-main transition-all"
-          >
-             <Settings className="w-5 h-5" />
-             <span className="font-medium text-sm">设置与备份</span>
-          </button>
-          <button 
-            onClick={toggleTheme}
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-muted hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-main transition-all"
-          >
-            {theme === 'dark' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
-            <span className="font-medium text-sm">{theme === 'dark' ? '深色模式' : '浅色模式'}</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        {/* Mobile Header */}
-        <header className="md:hidden bg-surface/80 backdrop-blur-md border-b border-border p-4 flex justify-between items-center shrink-0 sticky top-0 z-30">
-           <div className="flex items-center gap-2">
-             <div className="w-8 h-8 bg-gradient-to-br from-primary to-indigo-700 rounded-lg flex items-center justify-center">
+    <div className="min-h-screen bg-background transition-colors selection:bg-primary/20 flex flex-col">
+      <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border shrink-0">
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="bg-primary p-2 rounded-xl shadow-lg shadow-primary/20">
                 <Wallet className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-indigo-600 bg-clip-text text-transparent truncate">
+              SubScript
+            </h1>
+          </div>
+          
+          <div className="flex items-center gap-2">
+             <div className="hidden md:flex bg-surface p-1 rounded-lg border border-border mr-2">
+                <button 
+                    onClick={() => setActiveTab('dashboard')}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'dashboard' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:text-main'}`}
+                >
+                    <LayoutDashboard className="w-4 h-4" /> 概览
+                </button>
+                <button 
+                    onClick={() => setActiveTab('subscriptions')}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'subscriptions' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:text-main'}`}
+                >
+                    <List className="w-4 h-4" /> 订阅
+                </button>
+                <button 
+                    onClick={() => setActiveTab('bookkeeping')}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'bookkeeping' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:text-main'}`}
+                >
+                    <ReceiptText className="w-4 h-4" /> 记账
+                </button>
              </div>
-             <span className="font-bold text-lg">SubScript</span>
-           </div>
-           <div className="flex items-center gap-3">
-              <button 
-                onClick={() => setIsSettingsOpen(true)}
-                className="p-2 text-muted hover:text-main bg-background rounded-full border border-border"
-              >
-                <Settings className="w-5 h-5" />
-              </button>
-              <button 
-                onClick={toggleTheme}
-                className="p-2 text-muted hover:text-main bg-background rounded-full border border-border"
-              >
-                {theme === 'dark' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
-              </button>
-           </div>
-        </header>
 
-        {/* Scrollable Area */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 pb-24 md:pb-8 scroll-smooth" id="scroll-container">
-          <div className="max-w-5xl mx-auto w-full">
-            {activeTab === 'dashboard' ? (
-              <Dashboard 
-                subscriptions={subscriptions} 
-                budget={budget}
-                onUpdateBudget={handleUpdateBudget}
-                restDays={restDays}
-                onToggleRestDay={handleToggleRestDay}
-                onOpenAI={() => setIsAIModalOpen(true)}
-              />
-            ) : (
-              <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-bold text-main">订阅列表</h2>
-                  <button 
-                    onClick={openAddModal}
-                    className="md:hidden flex items-center gap-2 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium shadow-lg shadow-primary/20"
-                  >
-                    <Plus className="w-4 h-4" /> 新增
-                  </button>
-                  <button 
-                    onClick={openAddModal}
-                    className="hidden md:flex items-center gap-2 px-4 py-2 bg-primary hover:bg-indigo-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-primary/20"
-                  >
-                    <Plus className="w-5 h-5" /> 添加订阅
-                  </button>
-                </div>
-                <SubscriptionList 
-                  subscriptions={subscriptions} 
-                  onDelete={requestDelete} 
-                  onEdit={handleEdit}
-                  isLoading={isLoading}
-                />
-              </div>
-            )}
+            <button 
+              onClick={() => setDarkMode(!darkMode)}
+              className="p-2.5 rounded-xl hover:bg-surface text-muted hover:text-main transition-all active:scale-95"
+            >
+              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+            <button 
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2.5 rounded-xl hover:bg-surface text-muted hover:text-main transition-all active:scale-95"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
           </div>
         </div>
+      </header>
+
+      {/* Main Content with correct padding to avoid overlap with bottom nav */}
+      <main className="max-w-5xl mx-auto p-4 md:p-6 space-y-6 flex-1 w-full pb-24 md:pb-6 overflow-x-hidden">
+        {activeTab === 'dashboard' && (
+          <Dashboard 
+            subscriptions={subscriptions} 
+            budget={budget} 
+            onUpdateBudget={setBudget}
+            restDays={restDays}
+            onToggleRestDay={handleToggleRestDay}
+            onOpenAI={() => setIsAiModalOpen(true)}
+            transactions={transactions}
+          />
+        )}
+        
+        {activeTab === 'subscriptions' && (
+          <SubscriptionList 
+            subscriptions={subscriptions}
+            onDelete={handleDeleteSubscription}
+            onEdit={handleEditSubscription}
+          />
+        )}
+
+        {activeTab === 'bookkeeping' && (
+            <BookkeepingList 
+                transactions={transactions}
+                onDelete={handleDeleteTransaction}
+                onEdit={handleEditTransaction}
+            />
+        )}
       </main>
 
-      {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface/90 backdrop-blur-lg border-t border-border px-6 pb-safe pt-2 z-40 h-[calc(60px+env(safe-area-inset-bottom))]">
-        <div className="flex justify-between items-end h-full pb-3">
-           <button 
-             onClick={() => setActiveTab('dashboard')}
-             className={`flex flex-col items-center gap-1 w-16 transition-colors ${activeTab === 'dashboard' ? 'text-primary' : 'text-muted'}`}
-           >
-             <LayoutDashboard className="w-6 h-6" />
-             <span className="text-[10px] font-medium">概览</span>
-           </button>
-
-           <div className="relative -top-5">
-             <button 
-               onClick={openAddModal}
-               className="w-14 h-14 bg-primary text-white rounded-full flex items-center justify-center shadow-xl shadow-primary/30 border-4 border-background active:scale-95 transition-transform"
-             >
-               <Plus className="w-7 h-7" />
-             </button>
-           </div>
-
-           <button 
-             onClick={() => setActiveTab('list')}
-             className={`flex flex-col items-center gap-1 w-16 transition-colors ${activeTab === 'list' ? 'text-primary' : 'text-muted'}`}
-           >
-             <div className="relative">
-               <List className="w-6 h-6" />
-               {subscriptions.length > 0 && activeTab !== 'list' && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 border-2 border-surface rounded-full"></span>
-               )}
-             </div>
-             <span className="text-[10px] font-medium">列表</span>
-           </button>
+      {/* Mobile Navigation Bar */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface/90 backdrop-blur-lg border-t border-border z-40 pb-safe shadow-[0_-5px_10px_rgba(0,0,0,0.05)]">
+        <div className="flex justify-around items-center h-16">
+          <button 
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex flex-col items-center gap-1 w-full h-full justify-center transition-colors ${activeTab === 'dashboard' ? 'text-primary' : 'text-muted'}`}
+          >
+            <LayoutDashboard className="w-5 h-5" />
+            <span className="text-[10px] font-medium">概览</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('subscriptions')}
+            className={`flex flex-col items-center gap-1 w-full h-full justify-center transition-colors ${activeTab === 'subscriptions' ? 'text-primary' : 'text-muted'}`}
+          >
+            <List className="w-5 h-5" />
+            <span className="text-[10px] font-medium">订阅</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('bookkeeping')}
+            className={`flex flex-col items-center gap-1 w-full h-full justify-center transition-colors ${activeTab === 'bookkeeping' ? 'text-primary' : 'text-muted'}`}
+          >
+            <ReceiptText className="w-5 h-5" />
+            <span className="text-[10px] font-medium">记账</span>
+          </button>
         </div>
       </nav>
 
-      {/* Modals */}
-      <SubscriptionModal 
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveSubscription}
+      {/* Floating Action Button */}
+      <button
+        onClick={() => {
+            if (activeTab === 'bookkeeping') {
+                setEditingTransaction(undefined);
+                setIsTransactionModalOpen(true);
+            } else {
+                setEditingSub(undefined);
+                setIsSubModalOpen(true);
+            }
+        }}
+        className="fixed bottom-20 md:bottom-8 right-4 md:right-8 w-14 h-14 bg-primary hover:bg-indigo-600 text-white rounded-full shadow-lg shadow-primary/30 flex items-center justify-center transition-all hover:scale-105 active:scale-95 z-40"
+      >
+        <Plus className="w-7 h-7" />
+      </button>
+
+      <SubscriptionModal
+        isOpen={isSubModalOpen}
+        onClose={() => setIsSubModalOpen(false)}
+        onSave={handleAddSubscription}
         initialData={editingSub}
         aiConfig={aiConfig}
       />
 
-      <SettingsModal 
+      <TransactionModal
+        isOpen={isTransactionModalOpen}
+        onClose={() => setIsTransactionModalOpen(false)}
+        onSave={handleSaveTransaction}
+        initialData={editingTransaction}
+      />
+
+      <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        currentData={{ subscriptions, budget, restDays, aiConfig }}
-        onRestore={handleDataRestore}
+        currentData={{ subscriptions, budget, restDays, aiConfig, transactions }}
+        onRestore={handleRestoreData}
         aiConfig={aiConfig}
         onUpdateAIConfig={setAiConfig}
       />
-      
+
       <AIAnalysisModal
-        isOpen={isAIModalOpen}
-        onClose={() => setIsAIModalOpen(false)}
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
         subscriptions={subscriptions}
         budget={budget}
         aiConfig={aiConfig}
+        transactions={transactions}
       />
-
-      {/* Delete Confirmation Modal - Custom Implementation to bypass browser blocking */}
-      {deleteConfirmId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-surface border border-border rounded-2xl w-full max-w-sm shadow-2xl p-6 transform scale-100 animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-col items-center text-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-500">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-main">确认删除?</h3>
-                <p className="text-sm text-muted mt-2">
-                  此操作无法撤销。该订阅将从您的列表中永久移除。
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-3 w-full mt-2">
-                <button 
-                  onClick={() => setDeleteConfirmId(null)}
-                  className="w-full py-2.5 rounded-xl border border-border text-main hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors active:bg-slate-200"
-                >
-                  取消
-                </button>
-                <button 
-                  onClick={executeDelete}
-                  className="w-full py-2.5 rounded-xl bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-medium shadow-lg shadow-red-500/20 transition-colors"
-                >
-                  删除
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }

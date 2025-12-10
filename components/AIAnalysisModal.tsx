@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Sparkles, RefreshCw, Zap, Bot } from 'lucide-react';
-import { Subscription, Budget, AIConfig } from '../types';
+import { Subscription, Budget, AIConfig, Transaction } from '../types';
 import { analyzeFinances } from '../services/aiService';
 // @ts-ignore
 import { marked } from 'marked';
@@ -12,9 +11,10 @@ interface Props {
   subscriptions: Subscription[];
   budget: Budget;
   aiConfig: AIConfig;
+  transactions: Transaction[];
 }
 
-const AIAnalysisModal: React.FC<Props> = ({ isOpen, onClose, subscriptions, budget, aiConfig }) => {
+const AIAnalysisModal: React.FC<Props> = ({ isOpen, onClose, subscriptions, budget, aiConfig, transactions }) => {
   const [content, setContent] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +46,7 @@ const AIAnalysisModal: React.FC<Props> = ({ isOpen, onClose, subscriptions, budg
     stopFnRef.current = await analyzeFinances(
       subscriptions,
       budget,
+      transactions,
       aiConfig,
       (token) => {
         setContent(prev => prev + token);

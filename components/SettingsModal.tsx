@@ -1,7 +1,6 @@
-
 import React, { useRef, useState, useEffect } from 'react';
 import { X, Settings, Download, Upload, FileJson, Check, AlertCircle, Cloud, ExternalLink, Bot, Eye, EyeOff, MessageSquareText, Image as ImageIcon, Globe } from 'lucide-react';
-import { Subscription, Budget, AIConfig } from '../types';
+import { Subscription, Budget, AIConfig, Transaction } from '../types';
 import { pantryService } from '../services/pantryService';
 
 interface Props {
@@ -12,8 +11,9 @@ interface Props {
     budget: Budget;
     restDays: string[];
     aiConfig: AIConfig;
+    transactions: Transaction[];
   };
-  onRestore: (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[]; aiConfig?: AIConfig }) => void;
+  onRestore: (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[]; aiConfig?: AIConfig; transactions?: Transaction[] }) => void;
   aiConfig: AIConfig;
   onUpdateAIConfig: (config: AIConfig) => void;
 }

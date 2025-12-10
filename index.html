@@ -72,7 +72,9 @@
         -webkit-tap-highlight-color: transparent;
         user-select: none;
         -webkit-user-select: none;
-        overflow: hidden; /* Prevent body scroll, handle in main */
+        /* FIX: Allow body scroll for mobile content visibility */
+        overflow-y: auto; 
+        overflow-x: hidden;
       }
       
       /* Allow text selection in inputs */

@@ -1,5 +1,4 @@
-
-import { Subscription, Budget, CATEGORIES, AIConfig, AIModelConfig } from '../types';
+import { Subscription, Budget, CATEGORIES, AIConfig, AIModelConfig, Transaction, TRANSACTION_CATEGORIES } from '../types';
 import { calculateStats } from '../utils';
 
 const CHAT_WS_URL = 'wss://maas-api.cn-huabei-1.xf-yun.com/v1.1/chat';
@@ -152,9 +151,9 @@ export const generateImage = async (
 /**
  * Prepares the prompt based on user data
  */
-function createPrompt(subscriptions: Subscription[], budget: Budget): string {
+function createPrompt(subscriptions: Subscription[], budget: Budget, transactions: Transaction[]): string {
     const stats = calculateStats(subscriptions);
-    const categories = Object.entries(stats.categoryBreakdown)
+    const subCategories = Object.entries(stats.categoryBreakdown)
         .map(([name, val]) => {
              // @ts-ignore
              const label = CATEGORIES[name]?.label || name;
@@ -167,14 +166,38 @@ function createPrompt(subscriptions: Subscription[], budget: Budget): string {
         `- ${s.name} (${CATEGORIES[s.category]?.label}): ${s.price} ${s.currency}/${s.cycle}`
     ).join('\n');
 
-    return `Assuming you are a professional financial advisor. Please analyze my subscriptions and budget data to provide money-saving advice and financial health assessment.
+    // Calculate Variable Expenses (last 30 days)
+    const now = new Date();
+    const last30Days = new Date(now.setDate(now.getDate() - 30)).toISOString().split('T')[0];
+    
+    const recentExpenses = transactions.filter(t => t.type === 'expense' && t.date >= last30Days);
+    const totalRecentExpense = recentExpenses.reduce((sum, t) => sum + t.amount, 0);
+    
+    const expenseCategoryMap: Record<string, number> = {};
+    recentExpenses.forEach(t => {
+        if (!expenseCategoryMap[t.category]) expenseCategoryMap[t.category] = 0;
+        expenseCategoryMap[t.category] += t.amount;
+    });
+
+    const expensesBreakdown = Object.entries(expenseCategoryMap)
+        .map(([key, val]) => `${TRANSACTION_CATEGORIES[key]?.label || key}: ${val.toFixed(2)}`)
+        .join(', ');
+
+    return `Assuming you are a professional financial advisor. Please analyze my financial data (Subscriptions + Daily Expenses) to provide money-saving advice and financial health assessment.
 
     **My Financial Data:**
-    - **Total Subscriptions:** ${subscriptions.length}
+    
+    **1. Fixed Subscriptions:**
+    - **Total Active:** ${subscriptions.length}
     - **Monthly Fixed Spending:** ${stats.monthlyTotal.toFixed(2)} CNY
     - **Yearly Fixed Spending:** ${stats.yearlyTotal.toFixed(2)} CNY
-    - **Spending by Category:** ${categories}
-    - **Income/Budget Info:**
+    - **By Category:** ${subCategories}
+    
+    **2. Variable Expenses (Last 30 Days):**
+    - **Total Spending:** ${totalRecentExpense.toFixed(2)} CNY
+    - **Breakdown:** ${expensesBreakdown || 'None'}
+
+    **3. Income/Budget Info:**
       - Base Salary: ${budget.baseSalary} CNY
       - Commission: ${budget.commission} CNY
       - Target Monthly Budget for Subs: ${budget.monthly} CNY
@@ -183,9 +206,9 @@ function createPrompt(subscriptions: Subscription[], budget: Budget): string {
     ${subsList}
 
     **Please Provide:**
-    1. A brief assessment of my financial health regarding recurring expenses.
-    2. Identify any potential areas where I am overspending.
-    3. 3-5 concrete, actionable tips to optimize my subscription portfolio or save money.
+    1. A comprehensive assessment of my financial health (Fixed vs Variable spending).
+    2. Identify specific areas where I am overspending (either in subs or daily habits).
+    3. 3-5 concrete, actionable tips to save money.
     4. Use a professional yet encouraging tone.
     5. Please answer in Simplified Chinese (简体中文).
     `;
@@ -194,6 +217,7 @@ function createPrompt(subscriptions: Subscription[], budget: Budget): string {
 export const analyzeFinances = async (
     subscriptions: Subscription[],
     budget: Budget,
+    transactions: Transaction[],
     config: AIConfig,
     onToken: (token: string) => void,
     onComplete: () => void,
@@ -227,7 +251,7 @@ export const analyzeFinances = async (
                         text: [
                             {
                                 role: "user",
-                                content: createPrompt(subscriptions, budget)
+                                content: createPrompt(subscriptions, budget, transactions)
                             }
                         ]
                     }

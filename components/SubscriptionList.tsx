@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Subscription, CATEGORIES, CYCLES } from '../types';
 import { calculateNextBillingDate, getDaysUntil, formatCurrency } from '../utils';
