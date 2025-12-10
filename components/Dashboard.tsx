@@ -1,10 +1,9 @@
 
-
 import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Subscription, CATEGORIES, Budget } from '../types';
 import { calculateStats, formatCurrency, getDaysInMonth, countSundaysInMonth, getPaydayCountdown } from '../utils';
-import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator, Coffee, Coins, Bot, MousePointerClick, Timer } from 'lucide-react';
+import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator, Coffee, Coins, Bot, MousePointerClick, Timer, Repeat, ArrowRight, RotateCcw } from 'lucide-react';
 
 interface DashboardProps {
   subscriptions: Subscription[];
@@ -40,9 +39,11 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
   }, [budget.payday]);
 
   // --- Salary Calculation Logic ---
-  const salaryStats = useMemo(() => {
-    const year = viewDate.getFullYear();
-    const month = viewDate.getMonth();
+  
+  // Reusable function to calculate salary for a specific month context
+  const calculateSalaryForMonth = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
     const daysInMonth = getDaysInMonth(year, month);
     const sundaysInMonth = countSundaysInMonth(year, month);
     
@@ -70,8 +71,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
     // Total including commission
     const totalIncome = estimatedSalaryBeforeCommission + commission;
     
-    const disposableIncome = totalIncome - stats.monthlyTotal;
-
     return {
       daysInMonth,
       sundaysInMonth,
@@ -80,11 +79,19 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
       deductionAmount,
       base,
       commission,
-      totalIncome,
-      disposableIncome
+      totalIncome
     };
-  }, [viewDate, restDays, budget.baseSalary, budget.commission, stats.monthlyTotal]);
+  };
 
+  const currentMonthStats = useMemo(() => calculateSalaryForMonth(viewDate), [viewDate, restDays, budget.baseSalary, budget.commission]);
+  
+  // Calculate Previous Month Stats (for delayed salary)
+  const prevMonthDate = useMemo(() => new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1), [viewDate]);
+  const prevMonthStats = useMemo(() => calculateSalaryForMonth(prevMonthDate), [prevMonthDate, restDays, budget.baseSalary, budget.commission]);
+
+  // Determine Effective Salary for Disposable Income
+  const effectiveSalary = budget.salaryDelay === 1 ? prevMonthStats.totalIncome : currentMonthStats.totalIncome;
+  const disposableIncome = effectiveSalary - stats.monthlyTotal;
 
   // Calendar Logic
   const calendarData = useMemo(() => {
@@ -149,6 +156,10 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
   const prevMonth = () => {
     setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1));
   };
+  
+  const goToToday = () => {
+    setViewDate(new Date());
+  };
 
   const startEditing = (type: 'monthly' | 'yearly' | 'baseSalary' | 'commission' | 'payday', currentValue: number) => {
     setEditingTarget(type);
@@ -161,7 +172,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
       if (!isNaN(val) && val >= 0) {
         // Special validation for payday
         if (editingTarget === 'payday' && (val < 1 || val > 31)) {
-            // Can add toast here, but simple clamp for now
             return;
         }
         
@@ -172,6 +182,14 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
       }
     }
     setEditingTarget(null);
+  };
+  
+  const toggleSalaryDelay = () => {
+      const newDelay = budget.salaryDelay === 1 ? 0 : 1;
+      onUpdateBudget({
+          ...budget,
+          salaryDelay: newDelay
+      });
   };
 
   const renderBudgetCard = (
@@ -254,6 +272,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
 
   // Calendar Helpers
   const firstDayOfMonth = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay(); // 0 is Sunday
+  // @ts-ignore
   const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
   const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -298,7 +317,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
              
              {/* Bottom Info Bar */}
              <div className="relative z-10 mt-6 pt-4 border-t border-indigo-500/30 flex justify-between items-center text-xs text-indigo-200">
-                <div>当月休息天数: <span className="font-bold text-white">{salaryStats.markedRestDaysInMonth}</span> 天</div>
+                <div>当月休息天数: <span className="font-bold text-white">{currentMonthStats.markedRestDaysInMonth}</span> 天</div>
                 <div>年度总支出: <span className="font-bold text-white">{formatCurrency(stats.yearlyTotal)}</span></div>
              </div>
           </div>
@@ -307,13 +326,13 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
              <div className="flex justify-between items-start mb-4">
                  <h3 className="text-lg font-semibold flex items-center gap-2 text-main">
                     <Coins className="w-5 h-5 text-emerald-500" /> 
-                    {viewDate.getMonth() + 1}月收入计算
+                    收入与预算
                  </h3>
                  <div className="flex gap-1">
                     {/* Settings for Base Salary */}
                     {editingTarget === null && (
                         <button 
-                            onClick={() => startEditing('baseSalary', salaryStats.base)}
+                            onClick={() => startEditing('baseSalary', currentMonthStats.base)}
                             className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-muted hover:text-main"
                             title="设置基础工资"
                         >
@@ -327,6 +346,12 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                  <div className="grid grid-cols-2 gap-4">
                     {/* Left: Calculation Breakdown */}
                     <div className="space-y-2 text-sm">
+                        <div className="flex justify-between items-center mb-1">
+                            <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-muted px-1.5 py-0.5 rounded border border-border">
+                                {viewDate.getMonth() + 1}月考勤工资
+                            </span>
+                        </div>
+
                         <div className="flex justify-between group/row">
                              <span className="text-muted">基础工资:</span>
                              {editingTarget === 'baseSalary' ? (
@@ -341,7 +366,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                                     <button onClick={saveBudget} className="text-emerald-500"><Check className="w-3 h-3" /></button>
                                 </div>
                              ) : (
-                                <span className="font-medium text-main cursor-pointer hover:text-primary transition-colors" onClick={() => startEditing('baseSalary', salaryStats.base)}>{formatCurrency(salaryStats.base)}</span>
+                                <span className="font-medium text-main cursor-pointer hover:text-primary transition-colors" onClick={() => startEditing('baseSalary', currentMonthStats.base)}>{formatCurrency(currentMonthStats.base)}</span>
                              )}
                         </div>
                         <div className="flex justify-between group/row">
@@ -366,12 +391,12 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                         </div>
                         <div className="flex justify-between">
                              <span className="text-muted">缺勤扣款:</span>
-                             <span className={`font-medium ${salaryStats.deductionAmount > 0 ? 'text-red-500' : 'text-main'}`}>
-                                 -{formatCurrency(salaryStats.deductionAmount)}
+                             <span className={`font-medium ${currentMonthStats.deductionAmount > 0 ? 'text-red-500' : 'text-main'}`}>
+                                 -{formatCurrency(currentMonthStats.deductionAmount)}
                              </span>
                         </div>
                         <div className="flex justify-between items-center group/comm">
-                             <span className="text-muted flex items-center gap-1 cursor-pointer" onClick={() => startEditing('commission', salaryStats.commission)}>
+                             <span className="text-muted flex items-center gap-1 cursor-pointer" onClick={() => startEditing('commission', currentMonthStats.commission)}>
                                 提成收入
                              </span>
                              {editingTarget === 'commission' ? (
@@ -386,35 +411,66 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                                     <button onClick={saveBudget} className="text-emerald-500"><Check className="w-3 h-3" /></button>
                                 </div>
                              ) : (
-                                <span className="font-medium text-emerald-500 cursor-pointer hover:underline" onClick={() => startEditing('commission', salaryStats.commission)}>
-                                    +{formatCurrency(salaryStats.commission)}
+                                <span className="font-medium text-emerald-500 cursor-pointer hover:underline" onClick={() => startEditing('commission', currentMonthStats.commission)}>
+                                    +{formatCurrency(currentMonthStats.commission)}
                                 </span>
                              )}
                         </div>
                         <div className="pt-2 border-t border-border flex justify-between font-bold text-main">
-                             <span>实发工资:</span>
-                             <span>{formatCurrency(salaryStats.totalIncome)}</span>
+                             <span>预计工资:</span>
+                             <span>{formatCurrency(currentMonthStats.totalIncome)}</span>
                         </div>
                     </div>
 
                     {/* Right: Disposable Result */}
-                    <div className="flex flex-col justify-end text-right border-l border-border pl-4">
-                        <p className="text-sm text-muted mb-1">扣除订阅后可支配</p>
-                        <p className={`text-2xl font-bold ${salaryStats.disposableIncome >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                            {formatCurrency(salaryStats.disposableIncome)}
-                        </p>
+                    <div className="flex flex-col text-right border-l border-border pl-4">
+                         {/* Toggle for Payment Delay */}
+                         <div className="mb-auto flex justify-end">
+                            <button 
+                                onClick={toggleSalaryDelay}
+                                className={`text-[10px] px-2 py-1 rounded flex items-center gap-1 transition-colors ${
+                                    budget.salaryDelay === 1 
+                                    ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300' 
+                                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                }`}
+                                title="切换工资发放周期"
+                            >
+                                <Repeat className="w-3 h-3" />
+                                {budget.salaryDelay === 1 ? '次月发放' : '当月发放'}
+                            </button>
+                         </div>
+
+                        <div className="mt-2">
+                            <p className="text-xs text-muted mb-1">扣除订阅后可支配</p>
+                            <p className={`text-2xl font-bold ${disposableIncome >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                {formatCurrency(disposableIncome)}
+                            </p>
+                            {budget.salaryDelay === 1 && (
+                                <div className="flex flex-col items-end mt-1">
+                                    <p className="text-[10px] text-muted flex items-center gap-1">
+                                        收入来源: 上月工资 ({formatCurrency(prevMonthStats.totalIncome)})
+                                    </p>
+                                    <button
+                                        onClick={() => setViewDate(prevMonthDate)}
+                                        className="text-[10px] text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline flex items-center gap-0.5 mt-0.5"
+                                    >
+                                        去标注上月考勤 <ArrowRight className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                  </div>
 
                  <div className="text-[10px] text-muted bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-border">
                      <div className="flex flex-wrap gap-x-4 gap-y-1 mb-1.5">
-                        <span>月天数: {salaryStats.daysInMonth}</span>
-                        <span>周日: {salaryStats.sundaysInMonth}</span>
-                        <span className="text-orange-500 font-medium">本月标注休息: {salaryStats.markedRestDaysInMonth}天</span>
-                        <span>扣款计算天数: {salaryStats.effectiveDeductionDays}</span>
+                        <span>月天数: {currentMonthStats.daysInMonth}</span>
+                        <span>周日: {currentMonthStats.sundaysInMonth}</span>
+                        <span className="text-orange-500 font-medium">本月标注休息: {currentMonthStats.markedRestDaysInMonth}天</span>
+                        <span>扣款天数: {currentMonthStats.effectiveDeductionDays}</span>
                      </div>
                      <div className="opacity-75">
-                         公式: ({salaryStats.base} - 扣款 + 提成) - 订阅支出
+                         公式: ({currentMonthStats.base} - 扣款 + 提成) - 订阅支出
                      </div>
                  </div>
              </div>
@@ -534,16 +590,26 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                 </div>
             </div>
             
-            <div className="flex items-center gap-4 text-sm font-medium bg-background px-1 py-1 rounded-lg border border-border self-start md:self-auto">
-                <button onClick={prevMonth} className="p-1 hover:bg-surface text-muted hover:text-main rounded transition-colors">
-                    <ChevronLeft className="w-5 h-5" />
+            <div className="flex items-center gap-2 self-start md:self-auto">
+                <button 
+                    onClick={goToToday}
+                    className="p-1.5 text-xs font-medium bg-surface hover:bg-slate-100 dark:hover:bg-slate-800 border border-border rounded-lg text-muted hover:text-primary transition-colors flex items-center gap-1"
+                    title="回到今天"
+                >
+                    <RotateCcw className="w-3 h-3" />
+                    <span className="hidden sm:inline">今天</span>
                 </button>
-                <span className="min-w-[100px] text-center text-main">
-                    {viewDate.getFullYear()}年 {viewDate.getMonth() + 1}月
-                </span>
-                <button onClick={nextMonth} className="p-1 hover:bg-surface text-muted hover:text-main rounded transition-colors">
-                    <ChevronRight className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-4 text-sm font-medium bg-background px-1 py-1 rounded-lg border border-border">
+                    <button onClick={prevMonth} className="p-1 hover:bg-surface text-muted hover:text-main rounded transition-colors">
+                        <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <span className="min-w-[100px] text-center text-main">
+                        {viewDate.getFullYear()}年 {viewDate.getMonth() + 1}月
+                    </span>
+                    <button onClick={nextMonth} className="p-1 hover:bg-surface text-muted hover:text-main rounded transition-colors">
+                        <ChevronRight className="w-5 h-5" />
+                    </button>
+                </div>
             </div>
         </div>
 

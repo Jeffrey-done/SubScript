@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect } from 'react';
 import { Plus, LayoutDashboard, List, Wallet, Moon, Sun, Settings, AlertTriangle } from 'lucide-react';
 import { Subscription, Budget, AIConfig } from './types';
@@ -15,6 +16,7 @@ const DEFAULT_BUDGET: Budget = {
   baseSalary: 4500, // Default base salary
   commission: 0,    // Default commission
   payday: 15,       // Default payday
+  salaryDelay: 0,   // Default: current month payment
 };
 
 const DEFAULT_AI_CONFIG: AIConfig = {
@@ -46,6 +48,7 @@ function App() {
     if (parsed.baseSalary === undefined) parsed.baseSalary = 4500;
     if (parsed.commission === undefined) parsed.commission = 0;
     if (parsed.payday === undefined) parsed.payday = 15;
+    if (parsed.salaryDelay === undefined) parsed.salaryDelay = 0;
     return parsed;
   });
 

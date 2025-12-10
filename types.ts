@@ -22,6 +22,7 @@ export interface Budget {
   baseSalary: number; // Added base salary
   commission: number; // Added commission
   payday: number; // Day of the month (1-31)
+  salaryDelay: number; // 0 = Current month, 1 = Next month
 }
 
 export interface SpendingStats {
