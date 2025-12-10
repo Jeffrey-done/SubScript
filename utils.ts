@@ -42,6 +42,37 @@ export const getDaysUntil = (date: Date): number => {
   return diffDays;
 };
 
+export const getPaydayCountdown = (payday: number): number => {
+  const today = new Date();
+  const currentDay = today.getDate();
+  const currentMonth = today.getMonth();
+  const currentYear = today.getFullYear();
+
+  // Create date object for this month's payday
+  let targetDate = new Date(currentYear, currentMonth, payday);
+
+  // If today is strictly past the payday, calculate for next month
+  // If today IS the payday, diffDays will be 0
+  if (currentDay > payday) {
+    targetDate = new Date(currentYear, currentMonth + 1, payday);
+  }
+
+  // Handle month rollover (e.g. payday is 31st but next month only has 30 days)
+  // JS Date handles this automatically (e.g. Feb 30 becomes Mar 2), 
+  // but usually for payday logic we might want the last day of month if overflow.
+  // For simplicity, we let JS standard behavior apply or clamp it.
+  // Ideally: Math.min(payday, daysInMonth)
+  
+  // Reset hours to compare dates properly
+  today.setHours(0,0,0,0);
+  targetDate.setHours(0,0,0,0);
+
+  const diffTime = targetDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  return diffDays;
+};
+
 export const calculateStats = (subscriptions: Subscription[]) => {
   let monthlyTotal = 0;
   let yearlyTotal = 0;

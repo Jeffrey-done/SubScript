@@ -21,6 +21,7 @@ export interface Budget {
   yearly: number;
   baseSalary: number; // Added base salary
   commission: number; // Added commission
+  payday: number; // Day of the month (1-31)
 }
 
 export interface SpendingStats {

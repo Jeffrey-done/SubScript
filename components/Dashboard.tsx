@@ -1,9 +1,10 @@
 
+
 import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Subscription, CATEGORIES, Budget } from '../types';
-import { calculateStats, formatCurrency, getDaysInMonth, countSundaysInMonth } from '../utils';
-import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator, Coffee, Coins, Bot, MousePointerClick } from 'lucide-react';
+import { calculateStats, formatCurrency, getDaysInMonth, countSundaysInMonth, getPaydayCountdown } from '../utils';
+import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator, Coffee, Coins, Bot, MousePointerClick, Timer } from 'lucide-react';
 
 interface DashboardProps {
   subscriptions: Subscription[];
@@ -15,7 +16,7 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBudget, restDays, onToggleRestDay, onOpenAI }) => {
-  const [editingTarget, setEditingTarget] = useState<'monthly' | 'yearly' | 'baseSalary' | 'commission' | null>(null);
+  const [editingTarget, setEditingTarget] = useState<'monthly' | 'yearly' | 'baseSalary' | 'commission' | 'payday' | null>(null);
   const [tempBudgetValue, setTempBudgetValue] = useState('');
   
   // Calendar State
@@ -33,6 +34,11 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
 
   const sortedBreakdown = [...stats.categoryBreakdown].sort((a, b) => b.value - a.value);
   
+  // Payday Countdown
+  const paydayCountdown = useMemo(() => {
+    return getPaydayCountdown(budget.payday || 15);
+  }, [budget.payday]);
+
   // --- Salary Calculation Logic ---
   const salaryStats = useMemo(() => {
     const year = viewDate.getFullYear();
@@ -144,7 +150,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
     setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1));
   };
 
-  const startEditing = (type: 'monthly' | 'yearly' | 'baseSalary' | 'commission', currentValue: number) => {
+  const startEditing = (type: 'monthly' | 'yearly' | 'baseSalary' | 'commission' | 'payday', currentValue: number) => {
     setEditingTarget(type);
     setTempBudgetValue(currentValue.toString());
   };
@@ -153,6 +159,12 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
     if (editingTarget && tempBudgetValue) {
       const val = parseFloat(tempBudgetValue);
       if (!isNaN(val) && val >= 0) {
+        // Special validation for payday
+        if (editingTarget === 'payday' && (val < 1 || val > 31)) {
+            // Can add toast here, but simple clamp for now
+            return;
+        }
+        
         onUpdateBudget({
           ...budget,
           [editingTarget]: val
@@ -250,7 +262,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
       
       {/* Salary & Disposable Income Card */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 dark:from-indigo-900 dark:to-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
+          <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 dark:from-indigo-900 dark:to-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between">
              {/* Decorative background */}
              <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
              
@@ -274,12 +286,20 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                       <p className="text-3xl font-bold tracking-tight">{formatCurrency(stats.monthlyTotal)}</p>
                     </div>
                     <div className="border-l border-indigo-500/30 pl-4">
-                       <p className="text-sm text-indigo-200 mb-1">当月休息天数</p>
-                       <p className="text-3xl font-bold tracking-tight text-amber-300">
-                          {salaryStats.markedRestDaysInMonth} <span className="text-base font-medium text-indigo-200">天</span>
-                       </p>
+                        <p className="text-sm text-indigo-200 mb-1 flex items-center gap-1">
+                            <Timer className="w-3.5 h-3.5" /> 距离发工资
+                        </p>
+                        <p className="text-3xl font-bold tracking-tight text-emerald-300">
+                            {paydayCountdown === 0 ? '今天!' : `${paydayCountdown} 天`}
+                        </p>
                     </div>
                 </div>
+             </div>
+             
+             {/* Bottom Info Bar */}
+             <div className="relative z-10 mt-6 pt-4 border-t border-indigo-500/30 flex justify-between items-center text-xs text-indigo-200">
+                <div>当月休息天数: <span className="font-bold text-white">{salaryStats.markedRestDaysInMonth}</span> 天</div>
+                <div>年度总支出: <span className="font-bold text-white">{formatCurrency(stats.yearlyTotal)}</span></div>
              </div>
           </div>
 
@@ -291,7 +311,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                  </h3>
                  <div className="flex gap-1">
                     {/* Settings for Base Salary */}
-                    {editingTarget !== 'baseSalary' && editingTarget !== 'commission' && (
+                    {editingTarget === null && (
                         <button 
                             onClick={() => startEditing('baseSalary', salaryStats.base)}
                             className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-muted hover:text-main"
@@ -307,7 +327,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                  <div className="grid grid-cols-2 gap-4">
                     {/* Left: Calculation Breakdown */}
                     <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
+                        <div className="flex justify-between group/row">
                              <span className="text-muted">基础工资:</span>
                              {editingTarget === 'baseSalary' ? (
                                 <div className="flex items-center gap-1">
@@ -321,7 +341,27 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                                     <button onClick={saveBudget} className="text-emerald-500"><Check className="w-3 h-3" /></button>
                                 </div>
                              ) : (
-                                <span className="font-medium text-main">{formatCurrency(salaryStats.base)}</span>
+                                <span className="font-medium text-main cursor-pointer hover:text-primary transition-colors" onClick={() => startEditing('baseSalary', salaryStats.base)}>{formatCurrency(salaryStats.base)}</span>
+                             )}
+                        </div>
+                        <div className="flex justify-between group/row">
+                             <span className="text-muted">发薪日:</span>
+                             {editingTarget === 'payday' ? (
+                                <div className="flex items-center gap-1">
+                                    <input 
+                                        type="number" 
+                                        min="1" max="31"
+                                        value={tempBudgetValue}
+                                        onChange={(e) => setTempBudgetValue(e.target.value)}
+                                        className="w-16 bg-background border border-slate-600 rounded px-1 py-0.5 text-xs text-main outline-none"
+                                        autoFocus
+                                    />
+                                    <button onClick={saveBudget} className="text-emerald-500"><Check className="w-3 h-3" /></button>
+                                </div>
+                             ) : (
+                                <span className="font-medium text-main cursor-pointer hover:text-primary transition-colors flex items-center gap-1" onClick={() => startEditing('payday', budget.payday || 15)}>
+                                    每月 {budget.payday || 15} 号 <Edit2IconMini />
+                                </span>
                              )}
                         </div>
                         <div className="flex justify-between">
@@ -332,7 +372,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                         </div>
                         <div className="flex justify-between items-center group/comm">
                              <span className="text-muted flex items-center gap-1 cursor-pointer" onClick={() => startEditing('commission', salaryStats.commission)}>
-                                提成收入 <Edit2IconMini />
+                                提成收入
                              </span>
                              {editingTarget === 'commission' ? (
                                 <div className="flex items-center gap-1">
@@ -382,7 +422,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
       </div>
 
       {/* Budget Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {renderBudgetCard(
             '月度订阅预算', 
             stats.monthlyTotal, 
@@ -390,15 +430,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
             'monthly', 
             <Calculator className="w-5 h-5" />, 
             'bg-indigo-500 text-indigo-500'
-        )}
-
-        {renderBudgetCard(
-            '年度订阅预算', 
-            stats.yearlyTotal, 
-            budget.yearly, 
-            'yearly', 
-            <TrendingUp className="w-5 h-5" />, 
-            'bg-emerald-500 text-emerald-500'
         )}
 
         <div className="bg-surface p-6 rounded-2xl border border-border shadow-lg flex flex-col justify-between transition-colors">
