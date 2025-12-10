@@ -57,12 +57,6 @@ export const getPaydayCountdown = (payday: number): number => {
     targetDate = new Date(currentYear, currentMonth + 1, payday);
   }
 
-  // Handle month rollover (e.g. payday is 31st but next month only has 30 days)
-  // JS Date handles this automatically (e.g. Feb 30 becomes Mar 2), 
-  // but usually for payday logic we might want the last day of month if overflow.
-  // For simplicity, we let JS standard behavior apply or clamp it.
-  // Ideally: Math.min(payday, daysInMonth)
-  
   // Reset hours to compare dates properly
   today.setHours(0,0,0,0);
   targetDate.setHours(0,0,0,0);
@@ -125,6 +119,32 @@ export const countSundaysInMonth = (year: number, month: number) => {
     const date = new Date(year, month, day);
     if (date.getDay() === 0) { // 0 represents Sunday
       count++;
+    }
+  }
+  return count;
+};
+
+/**
+ * Counts the number of standard rest days in a month based on work mode.
+ * 'single' = Sundays only.
+ * 'double' = Saturdays and Sundays.
+ */
+export const countStandardRestDays = (year: number, month: number, mode: 'single' | 'double') => {
+  const days = getDaysInMonth(year, month);
+  let count = 0;
+  for (let day = 1; day <= days; day++) {
+    const date = new Date(year, month, day);
+    const dayOfWeek = date.getDay(); // 0 is Sunday, 6 is Saturday
+    
+    if (mode === 'double') {
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+            count++;
+        }
+    } else {
+        // Single mode: Only Sundays
+        if (dayOfWeek === 0) {
+            count++;
+        }
     }
   }
   return count;

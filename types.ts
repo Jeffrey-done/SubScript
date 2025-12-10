@@ -21,6 +21,7 @@ export interface Budget {
   commission: number; // Added commission
   payday: number; // Day of the month (1-31)
   salaryDelay: number; // 0 = Current month, 1 = Next month
+  workMode: 'single' | 'double'; // 'single' = 6-day week (Sun off), 'double' = 5-day week (Sat+Sun off)
 }
 
 export interface SpendingStats {

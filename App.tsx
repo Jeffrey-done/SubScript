@@ -16,6 +16,7 @@ const DEFAULT_BUDGET: Budget = {
   commission: 0,    // Default commission
   payday: 15,       // Default payday
   salaryDelay: 0,   // Default: current month payment
+  workMode: 'single', // Default: 6-day work week
 };
 
 const DEFAULT_AI_CONFIG: AIConfig = {
@@ -48,6 +49,7 @@ function App() {
     if (parsed.commission === undefined) parsed.commission = 0;
     if (parsed.payday === undefined) parsed.payday = 15;
     if (parsed.salaryDelay === undefined) parsed.salaryDelay = 0;
+    if (parsed.workMode === undefined) parsed.workMode = 'single';
     return parsed;
   });
 

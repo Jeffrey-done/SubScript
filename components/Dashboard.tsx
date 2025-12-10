@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Subscription, CATEGORIES, Budget, Transaction, TRANSACTION_CATEGORIES } from '../types';
-import { calculateStats, formatCurrency, getDaysInMonth, countSundaysInMonth, getPaydayCountdown } from '../utils';
-import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator, Coffee, Coins, Bot, MousePointerClick, Timer, Repeat, ArrowRight, RotateCcw, Info, ReceiptText, Activity } from 'lucide-react';
+import { calculateStats, formatCurrency, getDaysInMonth, countStandardRestDays, getPaydayCountdown } from '../utils';
+import { CreditCard, Calendar, TrendingUp, Settings2, Check, X, ChevronLeft, ChevronRight, CalendarDays, Wallet, Calculator, Coffee, Coins, Bot, MousePointerClick, Timer, Repeat, ArrowRight, RotateCcw, Info, ReceiptText, Activity, Briefcase } from 'lucide-react';
 
 interface DashboardProps {
   subscriptions: Subscription[];
@@ -19,7 +19,17 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
   const [tempBudgetValue, setTempBudgetValue] = useState('');
   
   // Calendar State
-  const [viewDate, setViewDate] = useState(new Date());
+  // Initialize viewDate based on salaryDelay to show the relevant salary calculation immediately
+  const [viewDate, setViewDate] = useState(() => {
+    const now = new Date();
+    // If salary is delayed (paid next month), default the view to the Previous Month
+    // This ensures the "Income & Budget" card immediately shows the salary calculation 
+    // that is funding the current month's "Disposable Income".
+    if (budget.salaryDelay === 1) {
+        return new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    }
+    return now;
+  });
 
   // --- Data Merging Logic for Charts ---
   const mergedChartData = useMemo(() => {
@@ -36,10 +46,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
     
     // Add Subscriptions
     subStats.categoryBreakdown.forEach(item => {
-        // Map subscription categories to a unified key if needed, or keep distinct
-        // We prefix sub categories to avoid collision or merge if keys match
-        // For simplicity, we assume they are distinct enough or we map them.
-        // Subscription Category Keys: entertainment, utilities, software, insurance, other
         expenseMap[item.name] = (expenseMap[item.name] || 0) + item.value;
     });
 
@@ -50,10 +56,8 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
 
     // Transform to Chart Data
     const data = Object.entries(expenseMap).map(([key, value]) => {
-        // Try to find label/color in SUBSCRIPTION categories first
         // @ts-ignore
         let config = CATEGORIES[key];
-        // If not found, look in TRANSACTION categories
         if (!config) {
             config = TRANSACTION_CATEGORIES[key];
         }
@@ -76,42 +80,40 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
 
   // --- Salary Calculation Logic ---
   
-  // Reusable function to calculate salary for a specific month context
   const calculateSalaryForMonth = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
     const daysInMonth = getDaysInMonth(year, month);
-    const sundaysInMonth = countSundaysInMonth(year, month);
+    // Use Standard Rest Days logic (Single vs Double break)
+    // 'single' = Sundays only (user's formula)
+    // 'double' = Sat + Sun
+    const standardRestDaysInMonth = countStandardRestDays(year, month, budget.workMode || 'single');
     
-    // Fix: Use string matching for accurate count instead of Date objects to avoid timezone issues
     const currentMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
     const markedRestDaysInMonth = restDays.filter(dateStr => dateStr.startsWith(currentMonthPrefix)).length;
 
-    // Formula: 4500 - {4500 / (DaysInMonth - Sundays)} * (RestDays - Sundays)
+    // Formula: Daily Rate = Base / WorkableDays
+    // WorkableDays = TotalDays - StandardRestDays
     const base = budget.baseSalary || 4500;
     const commission = budget.commission || 0;
     
-    const workableDays = daysInMonth - sundaysInMonth;
+    const workableDays = daysInMonth - standardRestDaysInMonth;
     const dailyRate = workableDays > 0 ? base / workableDays : 0;
     
-    // How many days "extra" rest did they take beyond Sundays?
-    const deductionDays = markedRestDaysInMonth - sundaysInMonth;
-    
-    // Logic: If deductionDays < 0 (worked extra), we cap at 4500 (deduction = 0).
-    // If deductionDays > 0 (rested extra), we deduct.
+    // Logic: If user marks MORE rest days than standard, we deduct.
+    // If user marks LESS (worked overtime on weekend), we effectively treat deduction as 0 (cap salary at base).
+    const deductionDays = markedRestDaysInMonth - standardRestDaysInMonth;
     const effectiveDeductionDays = Math.max(0, deductionDays);
     const deductionAmount = dailyRate * effectiveDeductionDays;
     
     const estimatedSalaryBeforeCommission = base - deductionAmount;
-    
-    // Total including commission
     const totalIncome = estimatedSalaryBeforeCommission + commission;
     
     return {
       year,
-      month: month + 1, // 1-based for display
+      month: month + 1,
       daysInMonth,
-      sundaysInMonth,
+      standardRestDaysInMonth,
       markedRestDaysInMonth,
       effectiveDeductionDays,
       deductionAmount,
@@ -122,7 +124,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
   };
 
   // Stats for the CURRENT CALENDAR VIEW (What user is editing)
-  const viewMonthStats = useMemo(() => calculateSalaryForMonth(viewDate), [viewDate, restDays, budget.baseSalary, budget.commission]);
+  const viewMonthStats = useMemo(() => calculateSalaryForMonth(viewDate), [viewDate, restDays, budget.baseSalary, budget.commission, budget.workMode]);
   
   // Stats for the ACTUAL INCOME SOURCE (Previous month if delayed, else current real month)
   const realToday = new Date();
@@ -130,11 +132,9 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
       ? new Date(realToday.getFullYear(), realToday.getMonth() - 1, 1) // Previous month
       : new Date(realToday.getFullYear(), realToday.getMonth(), 1);    // Current month
 
-  const sourceMonthStats = useMemo(() => calculateSalaryForMonth(sourceDate), [sourceDate, restDays, budget.baseSalary, budget.commission]);
+  const sourceMonthStats = useMemo(() => calculateSalaryForMonth(sourceDate), [sourceDate, restDays, budget.baseSalary, budget.commission, budget.workMode]);
 
   // --- Bookkeeping (Expenses) ---
-  // We need to calculate how much has been spent in the CURRENT real month (where money is being spent from)
-  // Usually disposable income is "Money I have NOW" minus "Money I spent NOW".
   const currentRealMonthPrefix = `${realToday.getFullYear()}-${String(realToday.getMonth() + 1).padStart(2, '0')}`;
   
   const variableExpenses = useMemo(() => {
@@ -144,8 +144,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
   }, [transactions, currentRealMonthPrefix]);
 
   const subStats = calculateStats(subscriptions);
-
-  // Disposable Income = (Income Source) - (Fixed Subs Avg) - (Real Expenses this month)
   const disposableIncome = sourceMonthStats.totalIncome - subStats.monthlyTotal - variableExpenses;
 
   // Calendar Logic
@@ -155,10 +153,9 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
     const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
     const data: Record<number, { subs: Subscription[], isRest: boolean, dateStr: string }> = {};
 
-    // Check rest days
     const daysInMonth = getDaysInMonth(year, month);
     for (let d = 1; d <= daysInMonth; d++) {
-       const dateStr = new Date(year, month, d, 12).toISOString().split('T')[0]; // Use noon to avoid timezone flip issues
+       const dateStr = new Date(year, month, d, 12).toISOString().split('T')[0];
        data[d] = { 
            subs: [], 
            isRest: restDays.includes(dateStr),
@@ -172,11 +169,8 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
         
         if (sub.cycle === 'monthly') {
              let day = start.getDate();
-             // Cap at month end (e.g. 31st on a 30-day month)
              if (day > daysInCurrentMonth) day = daysInCurrentMonth;
-             
              const dateToCheck = new Date(year, month, day);
-             // Ensure subscription has started
              if (dateToCheck >= start) {
                  if (data[day]) data[day].subs.push(sub);
              }
@@ -192,7 +186,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
              for (let d = 1; d <= daysInCurrentMonth; d++) {
                  const dateToCheck = new Date(year, month, d);
                  if (dateToCheck < start) continue;
-                 
                  const diffTime = dateToCheck.getTime() - start.getTime();
                  const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
                  if (diffDays % 7 === 0) {
@@ -216,7 +209,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
     setViewDate(new Date());
   };
 
-  // Helper to jump to the salary source month
   const goToSourceMonth = () => {
       setViewDate(sourceDate);
   };
@@ -230,11 +222,9 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
     if (editingTarget && tempBudgetValue) {
       const val = parseFloat(tempBudgetValue);
       if (!isNaN(val) && val >= 0) {
-        // Special validation for payday
         if (editingTarget === 'payday' && (val < 1 || val > 31)) {
             return;
         }
-        
         onUpdateBudget({
           ...budget,
           [editingTarget]: val
@@ -246,22 +236,33 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
   
   const toggleSalaryDelay = () => {
       const newDelay = budget.salaryDelay === 1 ? 0 : 1;
-      
-      // Auto-switch view to the relevant source month for clarity
       const now = new Date();
       let targetViewDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      
       if (newDelay === 1) {
           targetViewDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       }
-      
       setViewDate(targetViewDate);
-
       onUpdateBudget({
           ...budget,
           salaryDelay: newDelay
       });
   };
+
+  const toggleWorkMode = () => {
+      const newMode = budget.workMode === 'double' ? 'single' : 'double';
+      onUpdateBudget({
+          ...budget,
+          workMode: newMode
+      });
+  };
+
+  // Calculate Expected Payment Date
+  const expectedPayDate = new Date(viewMonthStats.year, viewMonthStats.month - 1, budget.payday || 15);
+  if (budget.salaryDelay === 1) {
+      expectedPayDate.setMonth(expectedPayDate.getMonth() + 1);
+  }
+  const expectedPayDateStr = `${expectedPayDate.getMonth() + 1}月${expectedPayDate.getDate()}日`;
+
 
   const renderBudgetCard = (
     title: string, 
@@ -340,7 +341,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
             )}
         </div>
         
-        {/* Active Subs Counter within budget card */}
         {type === 'monthly' && (
             <div className="mt-4 pt-3 border-t border-border flex items-center gap-2 text-xs text-muted">
                 <Activity className="w-3.5 h-3.5" />
@@ -403,7 +403,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                 </div>
              </div>
              
-             {/* Bottom Info Bar - Explicit Source */}
              <div className="relative z-10 mt-4">
                 <div className="flex justify-between items-center text-xs text-indigo-200">
                      <div className="flex items-center gap-1">
@@ -417,10 +416,22 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
           {/* RIGHT CARD */}
           <div className="bg-surface rounded-2xl p-6 border border-border shadow-xl relative overflow-hidden group">
              <div className="flex justify-between items-start mb-4">
-                 <h3 className="text-lg font-semibold flex items-center gap-2 text-main">
-                    <Coins className="w-5 h-5 text-emerald-500" /> 
-                    收入与预算
-                 </h3>
+                 <div className="flex items-center gap-2">
+                     <h3 className="text-lg font-semibold flex items-center gap-2 text-main">
+                        <Coins className="w-5 h-5 text-emerald-500" /> 
+                        收入与预算
+                     </h3>
+                     {/* Work Mode Toggle */}
+                     <button 
+                        onClick={toggleWorkMode}
+                        className="text-[10px] px-2 py-0.5 rounded border flex items-center gap-1 transition-colors bg-slate-50 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 text-muted"
+                        title="切换单休/双休制度"
+                     >
+                        <Briefcase className="w-3 h-3" />
+                        {budget.workMode === 'double' ? '双休' : '单休'}
+                     </button>
+                 </div>
+
                  <div className="flex gap-1">
                     {editingTarget === null && (
                         <button 
@@ -512,15 +523,20 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                                 </span>
                              )}
                         </div>
-                        <div className="pt-2 border-t border-border flex justify-between font-bold text-main">
-                             <span>{viewMonthStats.month}月实发:</span>
-                             <span>{formatCurrency(viewMonthStats.totalIncome)}</span>
+                        <div className="pt-2 border-t border-border flex flex-col gap-1">
+                             <div className="flex justify-between font-bold text-main">
+                                 <span>{viewMonthStats.month}月实发:</span>
+                                 <span>{formatCurrency(viewMonthStats.totalIncome)}</span>
+                             </div>
+                             <div className="flex justify-between text-[10px] text-muted">
+                                 <span>预计发放:</span>
+                                 <span>{expectedPayDateStr}</span>
+                             </div>
                         </div>
                     </div>
 
                     {/* Right: Disposable Result */}
                     <div className="flex flex-col text-right border-l border-border pl-4">
-                         {/* Toggle for Payment Delay */}
                          <div className="mb-auto flex justify-end">
                             <button 
                                 onClick={toggleSalaryDelay}
@@ -570,7 +586,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                  <div className="text-[10px] text-muted bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-border">
                      <div className="flex flex-wrap gap-x-4 gap-y-1 mb-1.5">
                         <span>{viewMonthStats.month}月天数: {viewMonthStats.daysInMonth}</span>
-                        <span>周日: {viewMonthStats.sundaysInMonth}</span>
+                        <span>标准休息: {viewMonthStats.standardRestDaysInMonth}天 ({budget.workMode === 'double' ? '双休' : '单休'})</span>
                         <span className="text-orange-500 font-medium">标注休息: {viewMonthStats.markedRestDaysInMonth}天</span>
                         <span>扣款天数: {viewMonthStats.effectiveDeductionDays}</span>
                      </div>
@@ -581,7 +597,9 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
              </div>
           </div>
       </div>
-
+      
+      {/* Rest of the dashboard (Budget Cards, Charts, Calendar) remains same, just pass through */}
+      
       {/* Budget Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {renderBudgetCard(
@@ -616,7 +634,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
 
       {/* Chart & Detailed Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart - Uses Merged Data */}
+        {/* Chart */}
         <div className="bg-surface p-6 rounded-2xl border border-border shadow-lg lg:col-span-2 transition-colors">
             <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-semibold text-main">支出构成 (订阅 + 日常)</h3>
@@ -660,7 +678,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
             </div>
         </div>
 
-        {/* Top Categories List - Uses Merged Data */}
+        {/* Top Categories List */}
         <div className="bg-surface p-6 rounded-2xl border border-border shadow-lg flex flex-col transition-colors">
           <h3 className="text-lg font-semibold text-main mb-4">分类排行</h3>
           <div className="space-y-4 overflow-y-auto flex-1 pr-2">
@@ -672,7 +690,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                 </div>
                 <div className="text-right">
                     <div className="text-main font-semibold">{formatCurrency(cat.value)}</div>
-                    {/* Show approximate breakdown if possible, or just value */}
                 </div>
               </div>
             )) : (
@@ -744,8 +761,11 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
             {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
                 const dayData = calendarData[day];
-                const isToday = new Date().toDateString() === new Date(viewDate.getFullYear(), viewDate.getMonth(), day).toDateString();
-                const isSunday = new Date(viewDate.getFullYear(), viewDate.getMonth(), day).getDay() === 0;
+                const dateObj = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+                const isToday = new Date().toDateString() === dateObj.toDateString();
+                const dayOfWeek = dateObj.getDay();
+                // Determine if it's a standard rest day for styling
+                const isStandardRest = budget.workMode === 'double' ? (dayOfWeek === 0 || dayOfWeek === 6) : (dayOfWeek === 0);
 
                 return (
                     <div 
@@ -758,7 +778,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subscriptions, budget, onUpdateBu
                         <div className="flex justify-between items-start mb-2">
                             <div className={`text-sm w-6 h-6 flex items-center justify-center rounded-full transition-colors
                                 ${isToday ? 'bg-primary text-white font-bold' : 
-                                  isSunday ? 'text-red-400' : 'text-muted'}
+                                  isStandardRest ? 'text-red-400' : 'text-muted'}
                             `}>
                                 {day}
                             </div>
