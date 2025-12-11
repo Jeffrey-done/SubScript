@@ -1,8 +1,9 @@
-import { Subscription, Budget, CATEGORIES, AIConfig, AIModelConfig, Transaction, TRANSACTION_CATEGORIES } from '../types';
+import { Subscription, Budget, CATEGORIES, AIConfig, AIModelConfig, Transaction, TRANSACTION_CATEGORIES, TransactionType } from '../types';
 import { calculateStats } from '../utils';
 
 const CHAT_WS_URL = 'wss://maas-api.cn-huabei-1.xf-yun.com/v1.1/chat';
 const IMAGE_API_URL = 'https://maas-api.cn-huabei-1.xf-yun.com/v2.1/tti';
+const OCR_WS_URL = 'wss://maas-api.cn-huabei-1.xf-yun.com/v1.1/vl'; // Vision-Language URL
 const API_HOST = "maas-api.cn-huabei-1.xf-yun.com";
 
 /**
@@ -44,7 +45,9 @@ async function getAuthUrl(config: AIModelConfig, path: string, method: string = 
     const queryString = params.toString().replace(/\+/g, '%20');
 
     // 3. Return Full URL
-    if (method === "GET") {
+    if (path === "/v1.1/vl") {
+        return `${OCR_WS_URL}?${queryString}`;
+    } else if (method === "GET") {
          return `${CHAT_WS_URL}?${queryString}`;
     } else {
          return `${IMAGE_API_URL}?${queryString}`;
@@ -146,6 +149,280 @@ export const generateImage = async (
         console.error("Image Gen Error", e);
         throw e;
     }
+};
+
+// --- Internal Helper: One-off DeepSeek Chat Request ---
+async function askDeepSeek(textPrompt: string, config: AIModelConfig): Promise<string> {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const url = await getAuthUrl(config, "/v1.1/chat", "GET");
+            const socket = new WebSocket(url);
+            let fullText = "";
+
+            socket.onopen = () => {
+                const params = {
+                    header: {
+                        app_id: config.appId,
+                        uid: "user_" + Math.random().toString(36).substring(7)
+                    },
+                    parameter: {
+                        chat: {
+                            domain: config.domain || "xdeepseekv3", // Use configured domain
+                            temperature: 0.1, // Low temperature for extraction
+                            max_tokens: 4096
+                        }
+                    },
+                    payload: {
+                        message: {
+                            text: [{ role: "user", content: textPrompt }]
+                        }
+                    }
+                };
+                socket.send(JSON.stringify(params));
+            };
+
+            socket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.header.code !== 0) {
+                    socket.close();
+                    reject(new Error(`DeepSeek Error: ${data.header.message}`));
+                    return;
+                }
+                if (data.payload?.choices?.text) {
+                    fullText += data.payload.choices.text[0].content;
+                }
+                if (data.header.status === 2) {
+                    socket.close();
+                    resolve(fullText);
+                }
+            };
+
+            socket.onerror = (err) => {
+                reject(err);
+            };
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
+
+// --- Internal Helper: Perform Vision/OCR Request ---
+async function performHunyuanOCR(imageBase64: string, config: AIModelConfig): Promise<string> {
+    return new Promise(async (resolve, reject) => {
+         try {
+            const url = await getAuthUrl(config, "/v1.1/vl", "GET");
+            const socket = new WebSocket(url);
+            let fullResponse = "";
+
+            socket.onopen = () => {
+                const params = {
+                    header: {
+                        app_id: config.appId,
+                        uid: "user_" + Math.random().toString(36).substring(7)
+                    },
+                    parameter: {
+                        chat: {
+                            domain: config.domain || "xophunyuanocr",
+                            temperature: 0.5,
+                            top_k: 4,
+                            max_tokens: 2048
+                        }
+                    },
+                    payload: {
+                        message: {
+                            text: [
+                                {
+                                    role: "user",
+                                    content: JSON.stringify([
+                                        {
+                                            type: "image_url",
+                                            image_url: {
+                                                url: `data:image/jpeg;base64,${imageBase64}`
+                                            }
+                                        },
+                                        {
+                                            type: "text",
+                                            // Stage 1: Just ask for raw text, no complex formatting
+                                            text: "请尽可能详细地识别并提取图片中的所有文字内容，按行返回。"
+                                        }
+                                    ])
+                                }
+                            ]
+                        }
+                    }
+                };
+                socket.send(JSON.stringify(params));
+            };
+
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.header.code !== 0) {
+                        socket.close();
+                        reject(new Error(`OCR Error: ${data.header.message}`));
+                        return;
+                    }
+                    if (data.payload?.choices?.text) {
+                        fullResponse += data.payload.choices.text[0].content;
+                    }
+                    if (data.header.status === 2) {
+                        socket.close();
+                        resolve(fullResponse);
+                    }
+                } catch(e) { reject(e); }
+            };
+
+            socket.onerror = (e) => reject(e);
+
+         } catch (e) { reject(e); }
+    });
+}
+
+/**
+ * Robust JSON extraction helper
+ */
+function extractAndParseJSON(text: string): any {
+    try {
+        // 1. Try direct parse
+        return JSON.parse(text);
+    } catch {
+        // 2. Try removing markdown code blocks
+        const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        try {
+            return JSON.parse(clean);
+        } catch {
+            // 3. Regex extraction
+            const match = clean.match(/\{[\s\S]*\}/);
+            if (match) {
+                return JSON.parse(match[0]);
+            }
+        }
+    }
+    throw new Error("无法解析返回的 JSON 数据");
+}
+
+/**
+ * Parse transaction details from natural language text using DeepSeek
+ * Enhanced to support mixed inputs (Natural Language OR OCR Text)
+ */
+export const parseTransactionFromText = async (
+    text: string,
+    config: AIConfig
+): Promise<{ amount: number; date: string; category: string; description: string; type: TransactionType }> => {
+    
+    if (!config.chat?.apiKey) throw new Error("请先配置 Chat (DeepSeek) 密钥");
+
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    // Updated Prompt to handle both User Inputs and OCR Context safely
+    // Specifically optimized for WeChat/Alipay Payment Screenshots
+    const prompt = `
+你是一个智能记账助手。请分析输入文本，提取记账关键信息并返回 JSON。
+输入文本可能是用户的自然语言指令，也可能是 OCR 识别到的支付软件（微信/支付宝/银行APP）截图文字。
+
+**输入文本:**
+"""
+${text}
+"""
+
+**提取规则 (请严格遵守):**
+1. **amount (金额)**: 
+   - 重点寻找画面中心的大号数字。
+   - 优先提取紧跟在"金额"、"付款"、"提现"、"合计"、"¥"、"￥"之后的数字。
+   - 忽略"余额"、"优惠"、"单价"等数字。
+   - **特殊情况**: 如果是"零钱提现"或"提现详情"，金额通常是页面上最大的数字。
+2. **date (日期)**: 
+   - 提取具体交易时间，格式 YYYY-MM-DD。
+   - 常见关键词："交易时间"、"支付时间"、"当前时间"、"提现时间"。
+   - 如果未找到年份，默认使用今年 (${today.getFullYear()})。如果完全未找到，使用今天 (${todayStr})。
+3. **description (描述)**: 
+   - **商户支付**: 提取商户名称，通常位于截图最顶部居中，或者在"商户全称"、"交易对象"之后。示例："百乐佳便利超市"。
+   - **提现/转账**: 如果标题是"零钱提现发起"、"提现详情"等，描述设为"零钱提现"或"转账"。
+4. **type (类型)**: 
+   - expense (支出): "付款"、"支付"、"消费"、"提现" (资产减少)。
+   - income (收入): "退款"、"入账"、"收款"。
+   - 默认为 expense。
+5. **category (分类)**: 
+   - 基于描述推断 (food, transport, shopping, housing, entertainment, medical, other)。
+   - 提现/转账 -> other。
+   - 超市/便利店 -> shopping 或 food。
+
+**返回格式:**
+纯 JSON 对象，无 Markdown。
+示例: {"amount": 12.85, "date": "2025-12-09", "category": "other", "description": "零钱提现", "type": "expense"}
+`;
+
+    try {
+        const aiResponse = await askDeepSeek(prompt, config.chat);
+        console.log("AI Chat Parsed:", aiResponse);
+        
+        const parsed = extractAndParseJSON(aiResponse);
+
+        return {
+            amount: parseFloat(parsed.amount) || 0,
+            date: parsed.date || todayStr,
+            category: parsed.category || 'other',
+            description: parsed.description || text.substring(0, 20).replace(/\n/g, ' '),
+            type: (parsed.type === 'income' ? 'income' : 'expense') as TransactionType
+        };
+    } catch (e: any) {
+        console.error("Smart Text Parse Failed", e);
+        throw new Error("AI 解析失败: " + e.message);
+    }
+};
+
+/**
+ * Two-Stage Recognition Pipeline:
+ * 1. Hunyuan OCR -> Get Raw Text
+ * 2. DeepSeek V3 -> Extract Structured Data (JSON) via Unified Parser
+ * 
+ * Returns parsed object AND raw text for context.
+ */
+export const recognizeReceipt = async (
+    imageBase64: string, // Pure base64 without prefix
+    config: AIConfig
+): Promise<{ amount: number; date: string; category: string; description: string; type: TransactionType; rawText: string }> => {
+    
+    // Check Configs
+    if (!config.ocr?.apiKey) throw new Error("请先配置 OCR 密钥");
+    if (!config.chat?.apiKey) throw new Error("请先配置 Chat (DeepSeek) 密钥");
+
+    console.log("Step 1: Calling Hunyuan OCR...");
+    let rawOcrText = "";
+    try {
+        rawOcrText = await performHunyuanOCR(imageBase64, config.ocr);
+    } catch (e: any) {
+        throw new Error("图片识别失败: " + e.message);
+    }
+
+    if (!rawOcrText || rawOcrText.length < 5) {
+        throw new Error("未识别到有效文字");
+    }
+
+    // Default result structure
+    const defaultResult = {
+        amount: 0,
+        date: new Date().toISOString().split('T')[0],
+        category: 'other',
+        description: '',
+        type: 'expense' as TransactionType
+    };
+
+    let parsed = defaultResult;
+    try {
+        console.log("Step 2: Parsing OCR Text via DeepSeek...");
+        // Use the unified parser for consistent logic
+        parsed = await parseTransactionFromText(rawOcrText, config);
+    } catch (e) {
+        console.warn("DeepSeek parsing failed, falling back to manual correction", e);
+        // We do NOT throw here. We return the raw text so the user can use the Chat UI to fix it.
+    }
+
+    return {
+        ...parsed,
+        rawText: rawOcrText
+    };
 };
 
 /**
@@ -278,7 +555,6 @@ export const analyzeFinances = async (
                     }
                 }
 
-                // Status 2 means generation complete
                 if (data.header.status === 2) {
                     onComplete();
                     socket.close();

@@ -40,6 +40,7 @@ export interface AIModelConfig {
 export interface AIConfig {
   chat: AIModelConfig;
   image: AIModelConfig;
+  ocr: AIModelConfig; // Added OCR config
   proxyUrl?: string; // Optional Proxy URL to bypass CORS
 }
 

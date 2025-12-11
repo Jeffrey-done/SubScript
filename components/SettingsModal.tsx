@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { X, Settings, Download, Upload, FileJson, Check, AlertCircle, Cloud, Bot, Eye, EyeOff, MessageSquareText, Image as ImageIcon, Globe, LogIn, UserPlus, RefreshCw, LogOut, Database } from 'lucide-react';
+import { X, Settings, Download, Upload, FileJson, Check, AlertCircle, Cloud, Bot, Eye, EyeOff, MessageSquareText, Image as ImageIcon, Globe, LogIn, UserPlus, RefreshCw, LogOut, Database, AlertTriangle, ScanLine } from 'lucide-react';
 import { Subscription, Budget, AIConfig, Transaction, UserAuth } from '../types';
 import { cloudService, AppData } from '../services/cloudService';
 import { pantryService } from '../services/pantryService';
@@ -17,9 +17,10 @@ interface Props {
   onRestore: (data: Partial<AppData>) => void;
   aiConfig: AIConfig;
   onUpdateAIConfig: (config: AIConfig) => void;
+  defaultAiConfig: AIConfig;
 }
 
-const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestore, aiConfig, onUpdateAIConfig }) => {
+const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestore, aiConfig, onUpdateAIConfig, defaultAiConfig }) => {
   const [status, setStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   
   // Cloudflare Auth State
@@ -37,7 +38,7 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
   const [localAiConfig, setLocalAiConfig] = useState<AIConfig>(aiConfig);
   const [showChatSecrets, setShowChatSecrets] = useState(false);
   const [showImageSecrets, setShowImageSecrets] = useState(false);
-  const [activeAiTab, setActiveAiTab] = useState<'chat' | 'image'>('chat');
+  const [activeAiTab, setActiveAiTab] = useState<'chat' | 'image' | 'ocr'>('chat');
 
   // File Input
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -246,6 +247,11 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
       setTimeout(() => setStatus(null), 2000);
   };
 
+  const handleRestoreDefaults = () => {
+      setLocalAiConfig(defaultAiConfig);
+      setStatus({ type: 'success', msg: '已加载默认 AI 配置，请点击“保存配置”以生效' });
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -304,6 +310,14 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
                             {isAuthLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : (authMode === 'login' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />)}
                             {authMode === 'login' ? '登录账号' : '注册新账号'}
                         </button>
+                        
+                        {/* Domestic Warning */}
+                        <div className="text-[10px] text-orange-500 flex items-start gap-1 bg-orange-50 dark:bg-orange-900/10 p-2 rounded">
+                            <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                            <span>
+                                注意：若点击无反应或报错，可能是 <b>workers.dev</b> 域名被墙。请确保在 Cloudflare 后台绑定的<b>自定义域名</b>已生效，并已重新部署 Pages。
+                            </span>
+                        </div>
                     </div>
                 ) : (
                     <div className="space-y-3">
@@ -408,6 +422,9 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
                         className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none font-mono"
                         placeholder="https://your-worker.name.workers.dev"
                      />
+                     <p className="text-[10px] text-muted mt-1 flex items-center gap-1">
+                        提示: 如果该地址以 workers.dev 结尾且在国内无法访问，请在 CF 后台绑定自定义域名。
+                     </p>
                 </div>
 
                 <div className="h-px bg-border w-full border-dashed"></div>
@@ -419,18 +436,25 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
                         className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded-md transition-all ${activeAiTab === 'chat' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'text-muted hover:text-main'}`}
                     >
                         <MessageSquareText className="w-3.5 h-3.5" />
-                        对话模型
+                        对话
                     </button>
                     <button 
                          onClick={() => setActiveAiTab('image')}
                          className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded-md transition-all ${activeAiTab === 'image' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'text-muted hover:text-main'}`}
                     >
                         <ImageIcon className="w-3.5 h-3.5" />
-                        绘图模型
+                        绘图
+                    </button>
+                    <button 
+                         onClick={() => setActiveAiTab('ocr')}
+                         className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded-md transition-all ${activeAiTab === 'ocr' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' : 'text-muted hover:text-main'}`}
+                    >
+                        <ScanLine className="w-3.5 h-3.5" />
+                        识图
                     </button>
                 </div>
 
-                {activeAiTab === 'chat' ? (
+                {activeAiTab === 'chat' && (
                     <div className="space-y-3 animate-in fade-in slide-in-from-left-2 duration-200">
                          <div className="flex justify-between items-center">
                             <span className="text-xs font-bold text-purple-600 dark:text-purple-400">对话配置 (Spark / DeepSeek)</span>
@@ -480,10 +504,12 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
                             />
                         </div>
                     </div>
-                ) : (
-                    <div className="space-y-3 animate-in fade-in slide-in-from-right-2 duration-200">
+                )}
+
+                {activeAiTab === 'image' && (
+                    <div className="space-y-3 animate-in fade-in duration-200">
                         <div className="flex justify-between items-center">
-                            <span className="text-xs font-bold text-purple-600 dark:text-purple-400">绘图配置</span>
+                            <span className="text-xs font-bold text-purple-600 dark:text-purple-400">Image Generation 配置</span>
                             <button 
                                 onClick={() => setShowImageSecrets(!showImageSecrets)}
                                 className="text-muted hover:text-main"
@@ -532,19 +558,89 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
                     </div>
                 )}
 
-                <button 
-                    onClick={handleSaveAIConfig}
-                    className="w-full flex items-center justify-center gap-2 bg-purple-500 hover:bg-purple-600 text-white py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-purple-500/20 mt-2"
-                >
-                    <Check className="w-4 h-4" />
-                    保存配置
-                </button>
+                {activeAiTab === 'ocr' && (
+                    <div className="space-y-3 animate-in fade-in slide-in-from-right-2 duration-200">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-purple-600 dark:text-purple-400">OCR / 识图配置 (Hunyuan)</span>
+                                <button 
+                                    onClick={() => setLocalAiConfig(prev => ({ ...prev, ocr: defaultAiConfig.ocr }))}
+                                    className="text-[10px] bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-300 px-2 py-0.5 rounded border border-purple-100 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors"
+                                >
+                                    恢复默认
+                                </button>
+                            </div>
+                            <button 
+                                onClick={() => setShowImageSecrets(!showImageSecrets)}
+                                className="text-muted hover:text-main"
+                            >
+                                {showImageSecrets ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                        </div>
+                         <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs text-muted mb-1 block">App ID</label>
+                                <input 
+                                    type="text" 
+                                    value={localAiConfig.ocr?.appId || ''}
+                                    onChange={(e) => setLocalAiConfig({...localAiConfig, ocr: {...(localAiConfig.ocr || {appId:'', apiSecret:'', apiKey:'', domain:''}), appId: e.target.value}})}
+                                    className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-muted mb-1 block">Model ID</label>
+                                <input 
+                                    type="text" 
+                                    value={localAiConfig.ocr?.domain || 'xophunyuanocr'}
+                                    onChange={(e) => setLocalAiConfig({...localAiConfig, ocr: {...(localAiConfig.ocr || {appId:'', apiSecret:'', apiKey:'', domain:''}), domain: e.target.value}})}
+                                    className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none"
+                                    placeholder="xophunyuanocr"
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-xs text-muted mb-1 block">API Secret</label>
+                            <input 
+                                type={showImageSecrets ? "text" : "password"}
+                                value={localAiConfig.ocr?.apiSecret || ''}
+                                onChange={(e) => setLocalAiConfig({...localAiConfig, ocr: {...(localAiConfig.ocr || {appId:'', apiSecret:'', apiKey:'', domain:''}), apiSecret: e.target.value}})}
+                                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none font-mono"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs text-muted mb-1 block">API Key</label>
+                            <input 
+                                type={showImageSecrets ? "text" : "password"}
+                                value={localAiConfig.ocr?.apiKey || ''}
+                                onChange={(e) => setLocalAiConfig({...localAiConfig, ocr: {...(localAiConfig.ocr || {appId:'', apiSecret:'', apiKey:'', domain:''}), apiKey: e.target.value}})}
+                                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-purple-500 outline-none font-mono"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                <div className="flex gap-2 mt-2">
+                    <button 
+                        onClick={handleRestoreDefaults}
+                        className="flex-1 flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-main py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                        <RefreshCw className="w-4 h-4" />
+                        恢复默认
+                    </button>
+                    <button 
+                        onClick={handleSaveAIConfig}
+                        className="flex-[2] flex items-center justify-center gap-2 bg-purple-500 hover:bg-purple-600 text-white py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-purple-500/20"
+                    >
+                        <Check className="w-4 h-4" />
+                        保存配置
+                    </button>
+                </div>
             </div>
           </div>
 
           <div className="h-px bg-border w-full"></div>
 
-          {/* Local Backup Section */}
+          {/* 4. 本地文件备份 */}
           <div className="space-y-4">
              <div className="flex items-center gap-2 mb-2">
                 <FileJson className="w-5 h-5 text-emerald-500" />

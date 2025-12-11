@@ -37,6 +37,12 @@ const DEFAULT_AI_CONFIG: AIConfig = {
         apiKey: '7fc4633e7541e7fdc26f295fd10f7b77',
         domain: 'xopzimageturbo'
     },
+    ocr: { // Default OCR Config
+        appId: '1198a631',
+        apiSecret: 'ODgwZWEwZWIxMmQ2M2VmNDhiZTBiMzlk',
+        apiKey: '7fc4633e7541e7fdc26f295fd10f7b77',
+        domain: 'xophunyuanocr'
+    },
     // 2. Use built-in URL as default
     proxyUrl: BUILT_IN_PROXY_URL
 };
@@ -70,7 +76,7 @@ function App() {
     const saved = localStorage.getItem('aiConfig');
     if (saved) {
         const parsed = JSON.parse(saved);
-        // Migration: check if it's the old flat structure (has appId at root)
+        // Migration logic
         // @ts-ignore
         if (parsed.appId) {
             return {
@@ -85,12 +91,17 @@ function App() {
                     domain: parsed.domain || 'xdeepseekv32'
                 },
                 image: DEFAULT_AI_CONFIG.image,
-                proxyUrl: BUILT_IN_PROXY_URL // Upgrade old config to use new built-in URL
+                ocr: DEFAULT_AI_CONFIG.ocr,
+                proxyUrl: BUILT_IN_PROXY_URL
             };
         }
         
         // Merge with default to ensure we pick up the built-in URL if the saved one is empty
+        // Also ensure OCR config exists
         const config = { ...DEFAULT_AI_CONFIG, ...parsed };
+        if (!config.ocr) {
+            config.ocr = DEFAULT_AI_CONFIG.ocr;
+        }
         if (!config.proxyUrl && BUILT_IN_PROXY_URL) {
             config.proxyUrl = BUILT_IN_PROXY_URL;
         }
@@ -190,6 +201,10 @@ function App() {
           const restoredConfig = data.aiConfig;
           if (!restoredConfig.proxyUrl && BUILT_IN_PROXY_URL) {
               restoredConfig.proxyUrl = BUILT_IN_PROXY_URL;
+          }
+          // Ensure OCR config is present during restore
+          if (!restoredConfig.ocr) {
+              restoredConfig.ocr = DEFAULT_AI_CONFIG.ocr;
           }
           setAiConfig(restoredConfig);
       }
@@ -356,6 +371,7 @@ function App() {
         onClose={() => setIsTransactionModalOpen(false)}
         onSave={handleSaveTransaction}
         initialData={editingTransaction}
+        aiConfig={aiConfig}
       />
 
       <SettingsModal
@@ -365,6 +381,7 @@ function App() {
         onRestore={handleRestoreData}
         aiConfig={aiConfig}
         onUpdateAIConfig={setAiConfig}
+        defaultAiConfig={DEFAULT_AI_CONFIG}
       />
 
       <AIAnalysisModal
