@@ -54,6 +54,18 @@ export interface Transaction {
   type: TransactionType;
 }
 
+export interface UserAuth {
+  username: string;
+  token: string;
+  isLoggedIn: boolean;
+}
+
+export interface CloudResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
 export const CATEGORIES: Record<CategoryType, { label: string; color: string }> = {
   entertainment: { label: '娱乐', color: '#8b5cf6' }, // Violet
   utilities: { label: '生活缴费', color: '#f59e0b' }, // Amber

@@ -8,6 +8,11 @@ import SettingsModal from './components/SettingsModal';
 import AIAnalysisModal from './components/AIAnalysisModal';
 import BookkeepingList from './components/BookkeepingList';
 import TransactionModal from './components/TransactionModal';
+import { AppData } from './services/cloudService';
+
+// 1. Get Built-in Worker URL from Environment Variables (Set in Cloudflare Pages)
+// FIX: Cast import.meta to any to avoid "Property 'env' does not exist on type 'ImportMeta'" TS error
+const BUILT_IN_PROXY_URL = (import.meta as any).env?.VITE_WORKER_URL || '';
 
 const DEFAULT_BUDGET: Budget = {
   monthly: 2000,
@@ -32,7 +37,8 @@ const DEFAULT_AI_CONFIG: AIConfig = {
         apiKey: '7fc4633e7541e7fdc26f295fd10f7b77',
         domain: 'xopzimageturbo'
     },
-    proxyUrl: '' // Default empty
+    // 2. Use built-in URL as default
+    proxyUrl: BUILT_IN_PROXY_URL
 };
 
 function App() {
@@ -79,10 +85,16 @@ function App() {
                     domain: parsed.domain || 'xdeepseekv32'
                 },
                 image: DEFAULT_AI_CONFIG.image,
-                proxyUrl: ''
+                proxyUrl: BUILT_IN_PROXY_URL // Upgrade old config to use new built-in URL
             };
         }
-        return { ...DEFAULT_AI_CONFIG, ...parsed };
+        
+        // Merge with default to ensure we pick up the built-in URL if the saved one is empty
+        const config = { ...DEFAULT_AI_CONFIG, ...parsed };
+        if (!config.proxyUrl && BUILT_IN_PROXY_URL) {
+            config.proxyUrl = BUILT_IN_PROXY_URL;
+        }
+        return config;
     }
     return DEFAULT_AI_CONFIG;
   });
@@ -169,11 +181,18 @@ function App() {
     });
   };
 
-  const handleRestoreData = (data: { subscriptions: Subscription[]; budget: Budget; restDays?: string[]; aiConfig?: AIConfig; transactions?: Transaction[] }) => {
+  const handleRestoreData = (data: Partial<AppData>) => {
       if (data.subscriptions) setSubscriptions(data.subscriptions);
       if (data.budget) setBudget(data.budget);
       if (data.restDays) setRestDays(data.restDays);
-      if (data.aiConfig) setAiConfig(data.aiConfig);
+      if (data.aiConfig) {
+          // Keep the built-in proxy URL if the restored one is empty
+          const restoredConfig = data.aiConfig;
+          if (!restoredConfig.proxyUrl && BUILT_IN_PROXY_URL) {
+              restoredConfig.proxyUrl = BUILT_IN_PROXY_URL;
+          }
+          setAiConfig(restoredConfig);
+      }
       if (data.transactions) setTransactions(data.transactions);
   };
 
