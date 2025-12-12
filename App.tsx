@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, LayoutDashboard, List, Wallet, Moon, Sun, Settings, ReceiptText } from 'lucide-react';
+import { Plus, LayoutDashboard, List, Moon, Sun, Settings, ReceiptText } from 'lucide-react';
 import { Subscription, Budget, AIConfig, Transaction } from './types';
 import Dashboard from './components/Dashboard';
 import SubscriptionList from './components/SubscriptionList';
@@ -238,9 +238,11 @@ function App() {
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border shrink-0">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="bg-primary p-2 rounded-xl shadow-lg shadow-primary/20">
-                <Wallet className="w-5 h-5 text-white" />
-            </div>
+            <img 
+                src="https://img.cdn1.vip/i/693be76cac073_1765533548.webp" 
+                alt="Logo" 
+                className="w-9 h-9 rounded-xl shadow-lg shadow-primary/20 object-cover" 
+            />
             <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-indigo-600 bg-clip-text text-transparent truncate">
               SubScript
             </h1>
