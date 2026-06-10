@@ -1,0 +1,5 @@
+{
+  "name": "SubScript - 订阅管家",
+  "description": "一个智能的订阅和经常性支出管理应用。追踪您的续费日期，分析支出趋势，并利用 Gemini AI 获得省钱建议。",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,21 @@
+{
+  "name": "SubScript 订阅管家",
+  "short_name": "SubScript",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://img.cdn1.vip/i/693be76cac073_1765533548.webp",
+      "sizes": "192x192",
+      "type": "image/webp"
+    },
+    {
+      "src": "https://img.cdn1.vip/i/693be76cac073_1765533548.webp",
+      "sizes": "512x512",
+      "type": "image/webp"
+    }
+  ]
+}
