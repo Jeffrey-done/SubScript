@@ -36,6 +36,83 @@ export default {
       }
 
       try {
+        if (url.pathname === '/api/backup/jianguoyun/upload' && request.method === 'POST') {
+          const { account, appPassword, fileName, data } = await request.json();
+          if (!isNonEmptyString(account) || !isNonEmptyString(appPassword)) {
+            return jsonResp({ success: false, error: '请输入坚果云账号和应用密码。' }, 400, corsHeaders);
+          }
+
+          const backupFileName = normalizeBackupFileName(fileName);
+          const davUrl = new URL(`https://dav.jianguoyun.com/dav/${backupFileName}`);
+          const payload = {
+            ...data,
+            lastUpdated: new Date().toISOString(),
+          };
+
+          const upstream = await fetch(davUrl, {
+            method: 'PUT',
+            headers: {
+              Authorization: buildBasicAuth(account, appPassword),
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          });
+
+          if (!upstream.ok) {
+            const text = await upstream.text().catch(() => '');
+            return jsonResp({
+              success: false,
+              error: `坚果云上传失败 (${upstream.status})${text ? `: ${text.slice(0, 120)}` : ''}`,
+            }, 502, corsHeaders);
+          }
+
+          return jsonResp({ success: true, data: payload }, 200, corsHeaders);
+        }
+
+        if (url.pathname === '/api/backup/jianguoyun/download' && request.method === 'POST') {
+          const { account, appPassword, fileName } = await request.json();
+          if (!isNonEmptyString(account) || !isNonEmptyString(appPassword)) {
+            return jsonResp({ success: false, error: '请输入坚果云账号和应用密码。' }, 400, corsHeaders);
+          }
+
+          const backupFileName = normalizeBackupFileName(fileName);
+          const davUrl = new URL(`https://dav.jianguoyun.com/dav/${backupFileName}`);
+
+          const upstream = await fetch(davUrl, {
+            method: 'GET',
+            headers: {
+              Authorization: buildBasicAuth(account, appPassword),
+            },
+          });
+
+          if (upstream.status === 404) {
+            return jsonResp({ success: false, error: '找不到坚果云备份文件，或文件名不正确。' }, 404, corsHeaders);
+          }
+
+          if (!upstream.ok) {
+            const text = await upstream.text().catch(() => '');
+            return jsonResp({
+              success: false,
+              error: `坚果云下载失败 (${upstream.status})${text ? `: ${text.slice(0, 120)}` : ''}`,
+            }, 502, corsHeaders);
+          }
+
+          const contentType = upstream.headers.get('content-type') || '';
+          let data;
+          if (contentType.includes('application/json')) {
+            data = await upstream.json();
+          } else {
+            const text = await upstream.text();
+            data = safeJsonParse(text);
+          }
+
+          if (!data || typeof data !== 'object') {
+            return jsonResp({ success: false, error: '坚果云备份内容不是有效 JSON。' }, 422, corsHeaders);
+          }
+
+          return jsonResp({ success: true, data }, 200, corsHeaders);
+        }
+
         if (url.pathname === '/api/auth/register' && request.method === 'POST') {
           const rateLimit = await checkAuthRateLimit(env, request);
           if (!rateLimit.allowed) {
@@ -168,6 +245,24 @@ function sessionKey(token) {
 
 function dataKey(username) {
   return `d:${username}`;
+}
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function normalizeBackupFileName(fileName) {
+  const fallback = 'subscript_backup.json';
+  if (!isNonEmptyString(fileName)) return fallback;
+
+  const trimmed = fileName.trim().replace(/^\/+/, '');
+  if (!trimmed || trimmed.includes('..')) return fallback;
+
+  return trimmed;
+}
+
+function buildBasicAuth(username, password) {
+  return `Basic ${btoa(`${username}:${password}`)}`;
 }
 
 function buildCorsHeaders(origin) {

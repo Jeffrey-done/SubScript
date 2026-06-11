@@ -1,8 +1,8 @@
 ﻿import React, { useRef, useState, useEffect } from 'react';
-import { X, Settings, Download, Upload, FileJson, Check, AlertCircle, Cloud, Bot, Eye, EyeOff, MessageSquareText, Image as ImageIcon, Globe, LogIn, UserPlus, RefreshCw, LogOut, Database, AlertTriangle, ScanLine } from 'lucide-react';
+import { X, Settings, Download, Upload, FileJson, Check, AlertCircle, Cloud, Bot, Eye, EyeOff, MessageSquareText, Image as ImageIcon, Globe, LogIn, UserPlus, RefreshCw, LogOut, AlertTriangle, ScanLine } from 'lucide-react';
 import { Subscription, Budget, AIConfig, Transaction, UserAuth } from '../types';
 import { cloudService, AppData } from '../services/cloudService';
-import { pantryService } from '../services/pantryService';
+import { jianguoyunService } from '../services/jianguoyunService';
 import { normalizeImportedData } from '../services/dataValidation';
 
 interface Props {
@@ -31,9 +31,12 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [isAuthLoading, setIsAuthLoading] = useState(false);
 
-  // Pantry State
-  const [pantryId, setPantryId] = useState('');
-  const [isPantryLoading, setIsPantryLoading] = useState(false);
+  // Jianguoyun WebDAV State
+  const [jianguoyunAccount, setJianguoyunAccount] = useState('');
+  const [jianguoyunAppPassword, setJianguoyunAppPassword] = useState('');
+  const [jianguoyunFileName, setJianguoyunFileName] = useState('subscript_backup.json');
+  const [showBackupSecret, setShowBackupSecret] = useState(false);
+  const [isBackupLoading, setIsBackupLoading] = useState(false);
 
   // AI Config State
   const [localAiConfig, setLocalAiConfig] = useState<AIConfig>(aiConfig);
@@ -52,14 +55,41 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
         setUserAuth({ username: savedUser, token: savedToken, isLoggedIn: true });
     }
     
-    // Load Pantry ID
-    const savedPantryId = localStorage.getItem('pantry_id');
-    if (savedPantryId) setPantryId(savedPantryId);
+    // Load Jianguoyun backup config
+    const savedAccount = localStorage.getItem('jianguoyun_account');
+    const savedAppPassword = localStorage.getItem('jianguoyun_app_password');
+    const savedFileName = localStorage.getItem('jianguoyun_file_name');
+    if (savedAccount) setJianguoyunAccount(savedAccount);
+    if (savedAppPassword) setJianguoyunAppPassword(savedAppPassword);
+    if (savedFileName) setJianguoyunFileName(savedFileName);
 
     if (isOpen) {
         setLocalAiConfig(aiConfig);
     }
   }, [isOpen, aiConfig]);
+
+  useEffect(() => {
+    const account = jianguoyunAccount.trim();
+    if (account) {
+      localStorage.setItem('jianguoyun_account', account);
+    } else {
+      localStorage.removeItem('jianguoyun_account');
+    }
+  }, [jianguoyunAccount]);
+
+  useEffect(() => {
+    const password = jianguoyunAppPassword.trim();
+    if (password) {
+      localStorage.setItem('jianguoyun_app_password', password);
+    } else {
+      localStorage.removeItem('jianguoyun_app_password');
+    }
+  }, [jianguoyunAppPassword]);
+
+  useEffect(() => {
+    const fileName = jianguoyunFileName.trim() || 'subscript_backup.json';
+    localStorage.setItem('jianguoyun_file_name', fileName);
+  }, [jianguoyunFileName]);
   useEffect(() => {
     if (!isOpen) return;
 
@@ -156,7 +186,7 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
               setStatus({ type: 'success', msg: 'Restored data from Cloudflare KV.' });
               setTimeout(() => onClose(), 1500);
           } else {
-              throw new Error(res.error || '浜戠鏆傛棤鏁版嵁');
+              throw new Error(res.error || '云端暂无数据');
           }
       } catch (e: any) {
           setStatus({ type: 'error', msg: 'Pull failed: ' + e.message });
@@ -165,41 +195,56 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
       }
   };
 
-  // --- Pantry Cloud Handlers ---
-  const handlePantryUpload = async () => {
-    if (!pantryId) {
-        setStatus({ type: 'error', msg: 'Please enter a Pantry ID.' });
+  // --- Jianguoyun Backup Handlers ---
+  const handleJianguoyunUpload = async () => {
+    if (!jianguoyunAccount.trim() || !jianguoyunAppPassword.trim()) {
+        setStatus({ type: 'error', msg: '请先填写坚果云账号和应用密码。' });
         return;
     }
-    localStorage.setItem('pantry_id', pantryId);
-    setIsPantryLoading(true);
+    if (!localAiConfig.proxyUrl) {
+        setStatus({ type: 'error', msg: '请先在 AI & 网络配置中填写 Cloudflare Worker 地址。' });
+        return;
+    }
+    setIsBackupLoading(true);
     try {
-        await pantryService.uploadBackup(pantryId, currentData);
-        setStatus({ type: 'success', msg: '备份已上传到 Pantry Cloud。' });
+        await jianguoyunService.uploadBackup(localAiConfig.proxyUrl, {
+          account: jianguoyunAccount.trim(),
+          appPassword: jianguoyunAppPassword.trim(),
+          fileName: jianguoyunFileName.trim() || 'subscript_backup.json',
+          data: currentData,
+        });
+        setStatus({ type: 'success', msg: '备份已上传到坚果云。' });
     } catch (e: any) {
-        setStatus({ type: 'error', msg: e.message || 'Pantry upload failed.' });
+        setStatus({ type: 'error', msg: e.message || '坚果云上传失败。' });
     } finally {
-        setIsPantryLoading(false);
+        setIsBackupLoading(false);
     }
   };
 
-  const handlePantryDownload = async () => {
-    if (!pantryId) {
-        setStatus({ type: 'error', msg: 'Please enter a Pantry ID.' });
+  const handleJianguoyunDownload = async () => {
+    if (!jianguoyunAccount.trim() || !jianguoyunAppPassword.trim()) {
+        setStatus({ type: 'error', msg: '请先填写坚果云账号和应用密码。' });
         return;
     }
-    localStorage.setItem('pantry_id', pantryId);
-    setIsPantryLoading(true);
+    if (!localAiConfig.proxyUrl) {
+        setStatus({ type: 'error', msg: '请先在 AI & 网络配置中填写 Cloudflare Worker 地址。' });
+        return;
+    }
+    setIsBackupLoading(true);
     try {
-        const data = await pantryService.downloadBackup(pantryId);
+        const data = await jianguoyunService.downloadBackup(localAiConfig.proxyUrl, {
+          account: jianguoyunAccount.trim(),
+          appPassword: jianguoyunAppPassword.trim(),
+          fileName: jianguoyunFileName.trim() || 'subscript_backup.json',
+        });
         // @ts-ignore
         onRestore(data);
-        setStatus({ type: 'success', msg: '已从 Pantry Cloud 恢复备份。' });
+        setStatus({ type: 'success', msg: '已从坚果云恢复备份。' });
         setTimeout(() => onClose(), 1500);
     } catch (e: any) {
-        setStatus({ type: 'error', msg: e.message || 'Pantry download failed.' });
+        setStatus({ type: 'error', msg: e.message || '坚果云下载失败。' });
     } finally {
-        setIsPantryLoading(false);
+        setIsBackupLoading(false);
     }
   };
 
@@ -370,16 +415,16 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
             </div>
           </div>
 
-          {/* 2. Pantry Cloud Backup (Restored) */}
+          {/* 2. Jianguoyun WebDAV Backup */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <Database className="w-5 h-5 text-indigo-500" />
+                    <Cloud className="w-5 h-5 text-indigo-500" />
                     <div>
-                        <h4 className="text-sm font-bold text-main">Pantry Cloud（免费备份）</h4>
+                        <h4 className="text-sm font-bold text-main">坚果云 WebDAV 备份</h4>
                         <div className="flex items-center gap-2">
-                            <p className="text-[10px] text-muted">无需注册，使用 ID 备份</p>
-                            <a href="https://pantry.cloud/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-500 hover:underline">获取 ID</a>
+                            <p className="text-[10px] text-muted">使用坚果云账号 + 应用密码备份</p>
+                            <a href="https://help.jianguoyun.com/?p=2064" target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-500 hover:underline">获取应用密码</a>
                         </div>
                     </div>
                 </div>
@@ -387,30 +432,59 @@ const SettingsModal: React.FC<Props> = ({ isOpen, onClose, currentData, onRestor
 
             <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-border space-y-3">
                 <div>
-                    <label className="text-xs text-muted mb-1 block">Pantry ID</label>
+                    <label className="text-xs text-muted mb-1 block">坚果云账号</label>
                     <input 
                         type="text" 
-                        value={pantryId}
-                        onChange={(e) => setPantryId(e.target.value)}
-                        placeholder="例如: 9471f008-..."
+                        value={jianguoyunAccount}
+                        onChange={(e) => setJianguoyunAccount(e.target.value)}
+                        placeholder="邮箱或手机号"
+                        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                    />
+                </div>
+                <div>
+                    <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs text-muted block">应用密码</label>
+                        <button
+                            type="button"
+                            onClick={() => setShowBackupSecret(!showBackupSecret)}
+                            className="text-muted hover:text-main"
+                        >
+                            {showBackupSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                    </div>
+                    <input 
+                        type={showBackupSecret ? 'text' : 'password'}
+                        value={jianguoyunAppPassword}
+                        onChange={(e) => setJianguoyunAppPassword(e.target.value)}
+                        placeholder="坚果云应用密码"
+                        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                    />
+                </div>
+                <div>
+                    <label className="text-xs text-muted mb-1 block">备份文件名</label>
+                    <input 
+                        type="text" 
+                        value={jianguoyunFileName}
+                        onChange={(e) => setJianguoyunFileName(e.target.value)}
+                        placeholder="subscript_backup.json"
                         className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-main focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
                     />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                     <button 
-                        onClick={handlePantryUpload} 
-                        disabled={isPantryLoading}
+                        onClick={handleJianguoyunUpload} 
+                        disabled={isBackupLoading}
                         className="bg-indigo-500 text-white py-2 rounded-lg text-xs font-medium hover:bg-indigo-600 flex items-center justify-center gap-1 shadow-sm disabled:opacity-50"
                     >
-                        {isPantryLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} 
+                        {isBackupLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} 
                         上传备份
                     </button>
                     <button 
-                        onClick={handlePantryDownload} 
-                        disabled={isPantryLoading}
+                        onClick={handleJianguoyunDownload} 
+                        disabled={isBackupLoading}
                         className="bg-surface border border-border text-main py-2 rounded-lg text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center gap-1 disabled:opacity-50"
                     >
-                        {isPantryLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                        {isBackupLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
                         从云端恢复
                     </button>
                 </div>
